@@ -46,7 +46,7 @@ import AttentionHeatmap from '../../components/AttentionHeatmap.jsx';
 ## Settings to fill in
 
 - `src/consts.ts`: site title, description, and your Buttondown username (the newsletter box appears once it's set).
-- `astro.config.mjs`: replace `site: 'https://example.com'` with your domain (used for RSS, sitemap and link previews).
+- `astro.config.mjs`: replace `site: 'https://example.com'` with your domain (used for the sitemap and link previews).
 - `src/pages/about.astro`: make the About page your own.
 
 ## Deploy (Cloudflare Pages, Netlify or Vercel)
