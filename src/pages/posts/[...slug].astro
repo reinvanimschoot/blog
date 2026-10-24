@@ -1,0 +1,62 @@
+---
+import { render } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Newsletter from '../../components/Newsletter.astro';
+import { getPosts, getSeries, formatDate, readingTime, type Post } from '../../lib/posts';
+
+export async function getStaticPaths() {
+  const posts = await getPosts();
+  return posts.map((post) => ({ params: { slug: post.id }, props: { post } }));
+}
+
+const { post } = Astro.props as { post: Post };
+const { Content } = await render(post);
+const { title, description, pubDate, updatedDate, series, part } = post.data;
+
+const seriesPosts = series ? await getSeries(series) : [];
+const index = seriesPosts.findIndex((p) => p.id === post.id);
+const prev = index > 0 ? seriesPosts[index - 1] : undefined;
+const next = index >= 0 && index < seriesPosts.length - 1 ? seriesPosts[index + 1] : undefined;
+---
+
+<Base title={title} description={description}>
+  <article class="wrap">
+    <header class="post-header">
+      {series && part && <div class="kicker">{series} · Part {part}</div>}
+      <h1>{title}</h1>
+      <div class="meta">
+        {formatDate(pubDate)}
+        {updatedDate && <> · updated {formatDate(updatedDate)}</>}
+        {' · '}{readingTime(post.body)} min read
+      </div>
+    </header>
+
+    <div class="prose">
+      <Content />
+    </div>
+
+    {series && seriesPosts.length > 0 && (
+      <nav class="series-box" aria-label="Series navigation">
+        <div class="kicker">The series</div>
+        <h2>{series}</h2>
+        <ol>
+          {seriesPosts.map((p) =>
+            p.id === post.id ? (
+              <li class="current">{p.data.title}</li>
+            ) : (
+              <li><a href={`/posts/${p.id}/`}>{p.data.title}</a></li>
+            ),
+          )}
+        </ol>
+        {(prev || next) && (
+          <div class="pager">
+            <span>{prev && <a href={`/posts/${prev.id}/`}>← {prev.data.title}</a>}</span>
+            <span>{next && <a href={`/posts/${next.id}/`}>{next.data.title} →</a>}</span>
+          </div>
+        )}
+      </nav>
+    )}
+
+    <Newsletter />
+  </article>
+</Base>

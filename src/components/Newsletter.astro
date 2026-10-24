@@ -1,0 +1,16 @@
+---
+import { BUTTONDOWN_USERNAME } from '../consts';
+const action = `https://buttondown.com/api/emails/embed-subscribe/${BUTTONDOWN_USERNAME}`;
+---
+
+{BUTTONDOWN_USERNAME && (
+  <aside class="newsletter">
+    <h2>Get the next part in your inbox</h2>
+    <p>One email when a new post comes out. No spam, which, after this series, you'll know how to filter anyway.</p>
+    <form action={action} method="post" target="_blank">
+      <label for="bd-email" class="sr-only" style="position:absolute;left:-9999px">Email address</label>
+      <input id="bd-email" type="email" name="email" placeholder="you@example.com" required />
+      <button type="submit">Subscribe</button>
+    </form>
+  </aside>
+)}
