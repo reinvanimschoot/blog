@@ -4,8 +4,7 @@ import mdx from '@astrojs/mdx';
 import sitemap from '@astrojs/sitemap';
 
 export default defineConfig({
-  // TODO: replace with your real domain once you have one
-  site: 'https://example.com',
+  site: 'https://reinvanimschoot.com',
   integrations: [mdx(), sitemap()],
   markdown: {
     shikiConfig: {
