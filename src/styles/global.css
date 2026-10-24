@@ -9,6 +9,7 @@
   --accent-soft: #f1e4dd;
   --highlight: #e3c58a;   /* soft ochre, used for underlines */
   --slate: #3d6b99;
+  --slate-soft: #e6eef6;
   --code-bg: #f1ede7;
 
   --font-display: 'Fraunces', Georgia, serif;
@@ -32,6 +33,7 @@
     --accent-soft: #352823;
     --highlight: #a8874a;
     --slate: #8db6dd;
+    --slate-soft: #1f2b37;
     --code-bg: #262320;
     color-scheme: dark;
   }
@@ -46,6 +48,7 @@
   --accent-soft: #352823;
   --highlight: #a8874a;
   --slate: #8db6dd;
+  --slate-soft: #1f2b37;
   --code-bg: #262320;
   color-scheme: dark;
 }
@@ -221,7 +224,7 @@ h1, h2, h3 {
 .prose th {
   font-family: var(--font-display);
   font-weight: 600;
-  background: var(--accent-soft);
+  background: var(--slate-soft);
 }
 .prose tbody tr:nth-child(even) td { background: var(--paper-2); }
 .prose tbody tr:last-child td { border-bottom: none; }
