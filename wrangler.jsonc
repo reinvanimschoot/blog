@@ -2,5 +2,8 @@
   "name": "blog",
   "compatibility_date": "2026-10-24",
   "assets": { "directory": "./dist" },
-  "workers_dev": true
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "reinvanimschoot.com", "custom_domain": true }
+  ]
 }
