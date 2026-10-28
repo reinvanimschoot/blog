@@ -1,0 +1,478 @@
+---
+/**
+ * WordPairs: shows how word pairs are collected from a sentence.
+ * One word is the selected word; its neighbors (N on each side) light up,
+ * and the selected word gets paired with each of them.
+ *
+ * Without JavaScript it's a static picture of the first word and its pairs.
+ * With JavaScript, readers step through the sentence (or tap any word),
+ * add each word's pairs to the list of all pairs, change the number of
+ * neighbors, and (with `editable`) type a sentence of their own.
+ *
+ * Usage in MDX:
+ *   import WordPairs from '../../components/WordPairs.astro';
+ *   <WordPairs />
+ *   <WordPairs editable sentence="..." start="..." />
+ */
+
+interface Props {
+  sentence?: string;
+  start?: string; // word to start on (defaults to the first word)
+  window?: number; // neighbors on each side to start with
+  maxWindow?: number;
+  editable?: boolean;
+}
+
+const {
+  sentence = 'I need to withdraw some cash from the bank',
+  start,
+  window = 2,
+  maxWindow = 3,
+  editable = false,
+} = Astro.props;
+
+const words = sentence.split(/\s+/);
+const startIndex = start ? Math.max(0, words.indexOf(start)) : 0;
+
+const neighborsOf = (i: number, n: number) => {
+  const out: number[] = [];
+  for (let j = Math.max(0, i - n); j <= Math.min(words.length - 1, i + n); j++) {
+    if (j !== i) out.push(j);
+  }
+  return out;
+};
+const startNeighbors = neighborsOf(startIndex, window);
+const config = JSON.stringify({ words, start: startIndex, window, maxWindow });
+---
+
+<script is:inline>document.documentElement.classList.add('js');</script>
+<figure class="wordpairs" data-config={config}>
+
+  <div class="wp-sentence" role="group" aria-label="Sentence">
+    {words.map((w, i) => (
+      <button
+        type="button"
+        class:list={[
+          'wp-word',
+          i === startIndex && 'wp-center',
+          startNeighbors.includes(i) && 'wp-neighbor',
+        ]}
+        data-i={i}
+        tabindex="-1"
+        disabled
+      >{w}</button>
+    ))}
+  </div>
+
+  <div class="wp-controls wp-js">
+    <button type="button" class="wp-step wp-prev" disabled={startIndex === 0}>← Previous word</button>
+    <span class="wp-status" aria-live="polite">0 of {words.length} words added</span>
+    <button type="button" class="wp-step wp-next">Next word →</button>
+  </div>
+
+  <div class="wp-pairs">
+    <div class="wp-label">
+      Pairs for "<span class="wp-current">{words[startIndex]}</span>"
+    </div>
+    <div class="wp-current-row">
+      <ul class="wp-list wp-list-current">
+        {startNeighbors.map((j) => (
+          <li><code>({words[startIndex]}, {words[j]})</code></li>
+        ))}
+      </ul>
+      <button type="button" class="wp-add wp-js">Add pairs</button>
+    </div>
+  </div>
+
+  <div class="wp-pairs wp-all wp-js">
+    <div class="wp-label">
+      All pairs so far: <span class="wp-count">0</span>
+    </div>
+    <div class="wp-lines">
+      <p class="wp-empty">No pairs added yet.</p>
+    </div>
+  </div>
+
+  <div class="wp-settings wp-js">
+    <label>
+      <span>Neighbors on each side: <output class="wp-n">{window}</output></span>
+      <input type="range" min="1" max={maxWindow} step="1" value={window} />
+    </label>
+    <button type="button" class="wp-reset">Start over</button>
+  </div>
+  {editable && (
+    <form class="wp-own wp-js">
+      <label>
+        <span>Your sentence</span>
+        <input
+          type="text"
+          name="sentence"
+          maxlength="120"
+          placeholder="Type your own sentence"
+          autocomplete="off"
+        />
+      </label>
+      <button type="submit">Use it</button>
+    </form>
+  )}
+</figure>
+
+<script>
+  type Config = { words: string[]; start: number; window: number; maxWindow: number };
+  const MAX_WORDS = 16;
+
+  // "Hello, world! It's me." -> ["hello", "world", "it's", "me"]
+  const toWords = (text: string) =>
+    text
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}'’\s-]/gu, ' ')
+      .split(/\s+/)
+      .map((w) => w.replace(/^[-'’]+|[-'’]+$/g, ''))
+      .filter(Boolean)
+      .slice(0, MAX_WORDS);
+
+  function setup(fig: HTMLElement) {
+    const cfg: Config = JSON.parse(fig.dataset.config!);
+    let words = cfg.words;
+    const sentenceEl = fig.querySelector<HTMLElement>('.wp-sentence')!;
+    let wordEls: HTMLButtonElement[] = [];
+    const own = fig.querySelector<HTMLFormElement>('.wp-own');
+    const prev = fig.querySelector<HTMLButtonElement>('.wp-prev')!;
+    const next = fig.querySelector<HTMLButtonElement>('.wp-next')!;
+    const add = fig.querySelector<HTMLButtonElement>('.wp-add')!;
+    const status = fig.querySelector<HTMLElement>('.wp-status')!;
+    const current = fig.querySelector<HTMLElement>('.wp-current')!;
+    const listCurrent = fig.querySelector<HTMLUListElement>('.wp-list-current')!;
+    const lines = fig.querySelector<HTMLElement>('.wp-lines')!;
+    const count = fig.querySelector<HTMLElement>('.wp-count')!;
+    const slider = fig.querySelector<HTMLInputElement>('.wp-settings input')!;
+    const nOut = fig.querySelector<HTMLOutputElement>('.wp-n')!;
+    const reset = fig.querySelector<HTMLButtonElement>('.wp-reset')!;
+
+    let center = cfg.start;
+    let n = cfg.window;
+    let added: number[] = []; // words whose pairs were added, in the order they were added
+
+    const neighborsOf = (i: number) => {
+      const out: number[] = [];
+      for (let j = Math.max(0, i - n); j <= Math.min(words.length - 1, i + n); j++) {
+        if (j !== i) out.push(j);
+      }
+      return out;
+    };
+    const pairItem = (i: number, j: number) => {
+      const li = document.createElement('li');
+      const code = document.createElement('code');
+      code.textContent = `(${words[i]}, ${words[j]})`;
+      li.append(code);
+      return li;
+    };
+
+    function render() {
+      const nb = neighborsOf(center);
+      wordEls.forEach((el, i) => {
+        el.classList.toggle('wp-center', i === center);
+        el.classList.toggle('wp-neighbor', nb.includes(i));
+        el.setAttribute('aria-pressed', String(i === center));
+      });
+
+      // the selected word's pairs, waiting to be added
+      current.textContent = words[center];
+      listCurrent.replaceChildren(...nb.map((j) => pairItem(center, j)));
+      const isAdded = added.includes(center);
+      add.disabled = isAdded;
+      add.textContent = isAdded ? 'Added ✓' : 'Add pairs';
+
+      // all pairs so far: one line per word
+      let total = 0;
+      const rows = added.map((i) => {
+        const ul = document.createElement('ul');
+        ul.className = 'wp-list wp-line';
+        const pairs = neighborsOf(i).map((j) => pairItem(i, j));
+        total += pairs.length;
+        ul.append(...pairs);
+        return ul;
+      });
+      if (rows.length) {
+        lines.replaceChildren(...rows);
+      } else {
+        const p = document.createElement('p');
+        p.className = 'wp-empty';
+        p.textContent = 'No pairs added yet.';
+        lines.replaceChildren(p);
+      }
+      count.textContent = String(total);
+
+      status.textContent =
+        added.length === words.length
+          ? `All ${words.length} words added!`
+          : `${added.length} of ${words.length} words added`;
+      prev.disabled = center === 0;
+      next.disabled = center === words.length - 1;
+    }
+
+    // (Re)build the clickable words for the current sentence
+    function buildWords() {
+      wordEls = words.map((w, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'wp-word';
+        b.dataset.i = String(i);
+        b.textContent = w;
+        return b;
+      });
+      sentenceEl.replaceChildren(...wordEls);
+    }
+
+    fig.classList.add('wp-live');
+    buildWords();
+    sentenceEl.addEventListener('click', (e) => {
+      const b = (e.target as Element).closest<HTMLButtonElement>('.wp-word');
+      if (!b) return;
+      center = Number(b.dataset.i);
+      render();
+    });
+
+    add.addEventListener('click', () => {
+      if (!added.includes(center)) added.push(center);
+      // move on to the next word, so you can keep adding pairs
+      if (center < words.length - 1) center++;
+      render();
+    });
+    next.addEventListener('click', () => {
+      center = Math.min(words.length - 1, center + 1);
+      render();
+    });
+    prev.addEventListener('click', () => {
+      center = Math.max(0, center - 1);
+      render();
+    });
+    slider.addEventListener('input', () => {
+      n = Number(slider.value);
+      nOut.value = String(n);
+      render();
+    });
+
+    own?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = own.elements.namedItem('sentence') as HTMLInputElement;
+      const ws = toWords(input.value);
+      if (ws.length < 2) {
+        input.focus();
+        status.textContent = 'Try a sentence with at least two words.';
+        return;
+      }
+      words = ws;
+      center = 0;
+      added = [];
+      buildWords();
+      render();
+    });
+
+    reset.addEventListener('click', () => {
+      words = cfg.words;
+      center = cfg.start;
+      n = cfg.window;
+      slider.value = String(n);
+      nOut.value = String(n);
+      added = [];
+      if (own) own.reset();
+      buildWords();
+      render();
+    });
+
+    render();
+  }
+
+  document.querySelectorAll<HTMLElement>('.wordpairs').forEach(setup);
+</script>
+
+<style is:global>
+  .wordpairs {
+    --wp-green: #2e8555;
+    --wp-green-soft: #e3f4ea;
+    --wp-plain: #000;
+    margin: 1.6em 0 1.8em;
+    padding: 18px 18px 16px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--paper-2);
+    font-family: var(--font-ui);
+  }
+
+  /* the sentence reads as one sentence: large italic text, where only the
+     color shows the selected word (green) and its neighbors (blue) */
+  .wordpairs .wp-sentence {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.1em 0.24em;
+    margin: 4px 0 16px;
+    font-family: var(--font-body);
+    font-size: 1.4rem;
+    font-style: italic;
+    line-height: 1.35;
+  }
+  .wordpairs .wp-word {
+    font: inherit;
+    padding: 0 1px;
+    border: none;
+    border-radius: 3px;
+    background: none;
+    color: var(--wp-plain);
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 5px;
+    transition: color 0.15s ease, text-decoration-color 0.15s ease;
+  }
+  .wordpairs .wp-word:disabled { cursor: default; opacity: 1; }
+  .wordpairs.wp-live .wp-word { cursor: pointer; }
+  .wordpairs.wp-live .wp-word:hover { text-decoration-color: var(--rule); }
+  /* color only, no bold, so the sentence never changes width */
+  .wordpairs .wp-word.wp-neighbor { color: var(--slate); }
+  .wordpairs .wp-word.wp-center { color: var(--wp-green); text-decoration-color: var(--wp-green); }
+  .wordpairs .wp-word:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+  .wordpairs .wp-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 auto 16px;
+    max-width: 30rem;
+  }
+  .wordpairs .wp-status { font-size: 0.85rem; color: var(--ink-soft); text-align: center; }
+  @media (max-width: 520px) {
+    /* on phones: buttons on one row, the status underneath */
+    .wordpairs .wp-controls { flex-wrap: wrap; }
+    .wordpairs .wp-status { order: 3; flex-basis: 100%; }
+  }
+  .wordpairs button.wp-step,
+  .wordpairs .wp-reset,
+  .wordpairs .wp-add {
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 7px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink-soft);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .wordpairs button.wp-step:hover:not(:disabled),
+  .wordpairs .wp-reset:hover { border-color: var(--slate); color: var(--slate); }
+  .wordpairs button.wp-step:disabled { opacity: 0.4; cursor: default; }
+
+  .wordpairs .wp-pairs { margin: 0 auto 14px; max-width: 30rem; }
+  .wordpairs .wp-label { font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 6px; }
+  .wordpairs .wp-current { color: var(--wp-green); font-weight: 600; }
+  .wordpairs .wp-count { font-family: var(--font-mono); color: var(--ink); }
+
+  .wordpairs .wp-current-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .wordpairs .wp-current-row .wp-list-current { flex: 1 1 16rem; }
+  .wordpairs .wp-add { border-color: var(--wp-green); color: var(--wp-green); flex: none; }
+  .wordpairs .wp-add:hover:not(:disabled) { background: var(--wp-green-soft); }
+  .wordpairs .wp-add:disabled { border-color: var(--rule); color: var(--ink-soft); cursor: default; }
+
+  .wordpairs .wp-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .wordpairs .wp-list code {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: var(--code-bg);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .wordpairs .wp-list-current code { background: var(--paper); border: 1px solid var(--rule); }
+
+  /* all pairs so far: one line per word, a little smaller */
+  .wordpairs .wp-lines { display: flex; flex-direction: column; gap: 5px; }
+  .wordpairs .wp-line { gap: 5px; }
+  .wordpairs .wp-line code { font-size: 0.78rem; padding: 2px 7px; background: var(--paper); border: 1px solid var(--rule); }
+  .wordpairs .wp-empty { margin: 0; font-size: 0.85rem; font-style: italic; color: var(--ink-soft); }
+
+  .wordpairs .wp-settings {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+    max-width: 30rem;
+    margin: 4px auto 0;
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+  .wordpairs .wp-settings label { display: flex; flex-direction: column; gap: 4px; flex: 1 1 14rem; }
+  .wordpairs .wp-settings output { font-family: var(--font-mono); color: var(--ink); }
+  .wordpairs .wp-settings input[type='range'] { accent-color: var(--slate); width: 100%; }
+
+  .wordpairs .wp-own {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    max-width: 30rem;
+    margin: 16px auto 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+    font-size: 0.9rem;
+    color: var(--ink-soft);
+  }
+  .wordpairs .wp-own label { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .wordpairs .wp-own input {
+    font: inherit;
+    font-size: 1rem;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    min-width: 0;
+  }
+  .wordpairs .wp-own button {
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 9px 16px;
+    border-radius: 6px;
+    border: none;
+    background: var(--slate);
+    color: var(--paper);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .wordpairs .wp-own button:hover { filter: brightness(1.08); }
+
+  /* parts that only work with JavaScript: hidden without it, but laid out
+     from the very first paint with it, so the page doesn't shift */
+  html:not(.js) .wordpairs .wp-js { display: none !important; }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .wordpairs {
+      --wp-green: #6cc993;
+      --wp-green-soft: #1d3a2a;
+      --wp-plain: var(--ink);
+    }
+  }
+  :root[data-theme='dark'] .wordpairs {
+    --wp-green: #6cc993;
+    --wp-green-soft: #1d3a2a;
+    --wp-plain: var(--ink);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .wordpairs .wp-word { transition: none; }
+  }
+</style>

@@ -1,0 +1,369 @@
+---
+/**
+ * SpamCompare: the same email, judged by the old bag-of-words filter and by
+ * the new filter with embeddings, side by side.
+ *
+ * Both filters sort the words they recognize into spam words and regular
+ * words (from the part 1 vocabulary), and send the email to the spam folder
+ * when there are more spam words than regular ones. The old filter only
+ * recognizes exact vocabulary words; the new one also recognizes words that
+ * are similar to one.
+ *
+ * The similar words are picked by hand for these few emails (illustrative,
+ * not real word2vec output).
+ *
+ * Usage in MDX:
+ *   import SpamCompare from '../../components/SpamCompare.astro';
+ *   <SpamCompare />
+ */
+
+// The vocabulary the part 1 filter learned, sorted by what each word points to
+const SPAM_WORDS = ['win', 'free', 'money', 'now'];
+const REGULAR_WORDS = ['lunch', 'friday', 'meeting'];
+
+// Words the old filter has never seen, and the vocabulary word they're similar to
+const SIMILAR: Record<string, string> = {
+  claim: 'win',
+  complimentary: 'free',
+  cash: 'money',
+  today: 'now',
+  monetary: 'money',
+  compensation: 'money',
+};
+
+interface Email {
+  from: string;
+  subject: string;
+  time: string;
+}
+
+const emails: Email[] = [
+  { from: 'Prize Department', subject: 'Claim your complimentary cash today!', time: '09:12' },
+  { from: 'Payout Services', subject: 'Access your monetary compensation', time: 'Mon' },
+  { from: 'HR', subject: 'Complimentary lunch after Friday meeting', time: 'Mon' },
+];
+const VOCAB = [...SPAM_WORDS, ...REGULAR_WORDS];
+
+type Kind = 'spam' | 'regular' | 'ignored';
+type Row = { word: string; similar?: string; kind: Kind };
+type Result = { rows: Row[]; spam: number; regular: number; verdict: 'spam' | 'inbox' };
+
+const kindOf = (w: string): Kind =>
+  SPAM_WORDS.includes(w) ? 'spam' : REGULAR_WORDS.includes(w) ? 'regular' : 'ignored';
+
+const toWords = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .split(/\s+/)
+    .filter(Boolean);
+
+function judge(subject: string, useSimilar: boolean): Result {
+  const rows: Row[] = toWords(subject).map((w) => {
+    if (kindOf(w) !== 'ignored') return { word: w, kind: kindOf(w) };
+    const sim = useSimilar ? SIMILAR[w] : undefined;
+    if (sim) return { word: w, similar: sim, kind: kindOf(sim) };
+    return { word: w, kind: 'ignored' };
+  });
+  const spam = rows.filter((r) => r.kind === 'spam').length;
+  const regular = rows.filter((r) => r.kind === 'regular').length;
+  return { rows, spam, regular, verdict: spam > regular ? 'spam' : 'inbox' };
+}
+
+const results = emails.map((e) => {
+  const old = judge(e.subject, false);
+  const neu = judge(e.subject, true);
+  // vocabulary words this email ends up using (directly or through a similar word)
+  const used = new Set(neu.rows.filter((r) => r.kind !== 'ignored').map((r) => r.similar ?? r.word));
+  return { ...e, old, neu, used };
+});
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+---
+
+<script is:inline>document.documentElement.classList.add('js');</script>
+<figure class="spamcompare">
+  <ul class="sc-mail" role="tablist" aria-label="Pick an email">
+    {results.map((r, i) => (
+      <li>
+        <button type="button" role="tab" class="sc-mail-item" aria-selected={i === 0 ? 'true' : 'false'} data-i={i}>
+          <svg class="sc-mail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5.5" width="18" height="13" rx="2" />
+            <path d="M3.5 7l8.5 6.5L20.5 7" />
+          </svg>
+          <span class="sc-mail-text">
+            <span class="sc-mail-from">{r.from}</span>
+            <span class="sc-mail-subject">{r.subject}</span>
+          </span>
+          <span class="sc-mail-time">{r.time}</span>
+        </button>
+      </li>
+    ))}
+  </ul>
+
+  <div class="sc-panels">
+  {results.map((r, i) => (
+    <div class="sc-panel" data-i={i} hidden={i !== 0}>
+      <div class="sc-vocab">
+        <div class="sc-vocab-label">Vocabulary from your example emails</div>
+        <ul class="sc-vocab-list">
+          {VOCAB.map((w) => (
+            <li class={`sc-vocab-word sc-v-${kindOf(w)}`}>
+              <span class="sc-dot" aria-hidden="true"></span>{w}
+            </li>
+          ))}
+        </ul>
+        <div class="sc-legend">
+          <span class="sc-v-spam"><span class="sc-dot" aria-hidden="true"></span>points to spam</span>
+          <span class="sc-v-regular"><span class="sc-dot" aria-hidden="true"></span>points to regular email</span>
+        </div>
+      </div>
+
+      <div class="sc-cols">
+        {[
+          { title: 'Old filter', sub: 'bag of words', res: r.old },
+          { title: 'New filter', sub: 'with embeddings', res: r.neu },
+        ].map((c) => (
+          <div class="sc-col">
+            <div class="sc-col-head">
+              <span class="sc-col-title">{c.title}</span>
+              <span class="sc-col-sub">{c.sub}</span>
+            </div>
+            <ul class="sc-words">
+              {c.res.rows.map((row) => (
+                <li class={`sc-word sc-${row.kind}`}>
+                  <span class="sc-w">
+                    {row.word}
+                    {row.similar && (
+                      <span class="sc-sim">
+                        is similar to <span class="sc-simword">{row.similar}</span>
+                      </span>
+                    )}
+                  </span>
+                  <span class="sc-tag">
+                    {row.kind === 'spam' ? (
+                      <><span class="sc-check" aria-hidden="true">✓</span> spam word</>
+                    ) : row.kind === 'regular' ? (
+                      'regular word'
+                    ) : (
+                      'ignored, not in vocabulary'
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div class="sc-total">
+              {plural(c.res.spam, 'spam word')}, {plural(c.res.regular, 'regular word')}
+            </div>
+            <div class:list={['sc-verdict', `sc-verdict-${c.res.verdict}`]}>
+              {c.res.verdict === 'spam' ? 'To the spam folder!' : 'Cleared for inbox'}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  ))}
+  </div>
+
+  <figcaption>
+    <span class="sc-js">Click an email to see how both filters judge it. </span>More spam words than regular words means spam. The similar words were picked by hand for this example.
+  </figcaption>
+</figure>
+
+<script>
+  document.querySelectorAll<HTMLElement>('.spamcompare').forEach((fig) => {
+    const items = Array.from(fig.querySelectorAll<HTMLButtonElement>('.sc-mail-item'));
+    const panels = Array.from(fig.querySelectorAll<HTMLElement>('.sc-panel'));
+    const show = (i: number) => {
+      items.forEach((t, k) => t.setAttribute('aria-selected', String(k === i)));
+      panels.forEach((p, k) => (p.hidden = k !== i));
+    };
+    items.forEach((t, i) => t.addEventListener('click', () => show(i)));
+  });
+</script>
+
+<style is:global>
+  .spamcompare {
+    --sc-spam: var(--accent);
+    --sc-regular: var(--slate);
+    --sc-ok: #2e8555;
+    --sc-green-bg: #dff3e6;
+    --sc-green-fg: #1e6b40;
+    --sc-red-bg: #f9e0dc;
+    --sc-red-fg: #a83a2c;
+    margin: 1.6em 0 1.8em;
+    padding: 16px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--paper-2);
+    font-family: var(--font-ui);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .spamcompare {
+      --sc-ok: #6cc993;
+      --sc-green-bg: #1d3a2a;
+      --sc-green-fg: #8ee0b2;
+      --sc-red-bg: #45231e;
+      --sc-red-fg: #f4a092;
+    }
+  }
+  :root[data-theme='dark'] .spamcompare {
+    --sc-ok: #6cc993;
+    --sc-green-bg: #1d3a2a;
+    --sc-green-fg: #8ee0b2;
+    --sc-red-bg: #45231e;
+    --sc-red-fg: #f4a092;
+  }
+  html:not(.js) .spamcompare .sc-js { display: none !important; }
+
+  /* the three emails, like an inbox */
+  .spamcompare .sc-mail {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--paper);
+  }
+  .spamcompare .sc-mail li + li { border-top: 1px solid var(--rule); }
+  .spamcompare .sc-mail-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    border-left: 3px solid transparent;
+    background: none;
+    font: inherit;
+    text-align: left;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .spamcompare .sc-mail-item:hover { background: var(--paper-2); }
+  .spamcompare .sc-mail-item[aria-selected='true'] { background: var(--slate-soft); border-left-color: var(--slate); }
+  .spamcompare .sc-mail-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .spamcompare .sc-mail-icon {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: var(--ink-soft);
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .spamcompare .sc-mail-item[aria-selected='true'] .sc-mail-icon { stroke: var(--slate); }
+  .spamcompare .sc-mail-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .spamcompare .sc-mail-from { font-size: 0.8rem; color: var(--ink-soft); }
+  .spamcompare .sc-mail-subject { font-size: 0.95rem; font-weight: 600; }
+  .spamcompare .sc-mail-time { flex: none; font-size: 0.78rem; color: var(--ink-soft); }
+
+  /* all emails sit in the same spot, so the widget is always as tall as the
+     tallest one and switching emails never moves the page */
+  .spamcompare .sc-panels { display: grid; }
+  .spamcompare .sc-panel { grid-area: 1 / 1; }
+  .spamcompare .sc-panel[hidden] { display: block; visibility: hidden; }
+
+  /* vocabulary: one list, with a small dot for spam or regular */
+  .spamcompare .sc-vocab { margin: 0 0 14px; text-align: center; }
+  .spamcompare .sc-vocab-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+  .spamcompare .sc-vocab-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+  .spamcompare .sc-vocab-word {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    padding: 2px 9px;
+    border-radius: 6px;
+    /* all vocabulary words look the same; only the dot says spam or regular */
+    border: 1px solid color-mix(in srgb, var(--ink) 40%, transparent);
+    background: var(--paper);
+    color: color-mix(in srgb, var(--ink) 82%, transparent);
+  }
+  .spamcompare .sc-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .spamcompare .sc-v-spam .sc-dot { background: var(--sc-spam); }
+  .spamcompare .sc-v-regular .sc-dot { background: var(--sc-regular); }
+  .spamcompare .sc-legend {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px 14px;
+    margin-top: 6px;
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .spamcompare .sc-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+
+  .spamcompare .sc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 520px) {
+    .spamcompare .sc-cols { grid-template-columns: 1fr; }
+  }
+  .spamcompare .sc-col {
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .spamcompare .sc-col-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 8px; }
+  .spamcompare .sc-col-title { font-weight: 700; font-size: 0.95rem; color: var(--ink); }
+  .spamcompare .sc-col-sub { font-size: 0.8rem; color: var(--ink-soft); }
+
+  .spamcompare .sc-words { list-style: none; margin: 0; padding: 0; flex: 1; }
+  .spamcompare .sc-word {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 0.9rem;
+  }
+  .spamcompare .sc-w { font-family: var(--font-mono); font-size: 0.86rem; color: var(--ink); }
+  .spamcompare .sc-sim { display: block; font-family: var(--font-ui); font-size: 0.8rem; color: var(--ink-soft); }
+  .spamcompare .sc-simword { font-family: var(--font-mono); color: var(--ink); font-weight: 600; }
+  .spamcompare .sc-tag { font-size: 0.8rem; text-align: right; color: var(--ink-soft); }
+  .spamcompare .sc-spam .sc-tag { color: var(--sc-ok); font-weight: 600; white-space: nowrap; }
+  .spamcompare .sc-regular .sc-tag { color: var(--sc-regular); white-space: nowrap; }
+  .spamcompare .sc-ignored .sc-w { color: var(--ink-soft); opacity: 0.7; }
+  .spamcompare .sc-ignored .sc-tag { font-style: italic; opacity: 0.75; }
+  .spamcompare .sc-check { font-weight: 700; }
+  .spamcompare .sc-total { padding-top: 8px; font-size: 0.88rem; font-weight: 600; color: var(--ink); text-align: center; }
+
+  .spamcompare .sc-verdict {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.98rem;
+  }
+  .spamcompare .sc-verdict-inbox { background: var(--sc-green-bg); color: var(--sc-green-fg); border: 1px solid var(--sc-green-fg); }
+  .spamcompare .sc-verdict-spam { background: var(--sc-red-bg); color: var(--sc-red-fg); border: 1px solid var(--sc-red-fg); }
+
+  .spamcompare figcaption {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+</style>

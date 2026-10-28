@@ -6,6 +6,8 @@ series: "How LLMs work"
 part: 1
 ---
 
+import SpamFilter from '../../components/SpamFilter.astro';
+
 This post is the first in a series where I endeavor to explain how large language models (LLMs) work, for people who have little or no technical background. By the end, you'll (hopefully) understand how an LLM like Claude or ChatGPT turns your questions into answers, with no math or coding background needed. We'll take it step by step, one problem at a time.
 
 And the first problem hits us before we can even begin to think about anything AI-related. Computers do not understand text. These days, Claude answers even your most obscure questions, so it's easy to think it reads words the way you do, but it does not. The only thing computers are comfortable working with is numbers. Which brings us to our first challenge: how do we turn words and sentences into numbers that a computer can work with?
@@ -123,6 +125,10 @@ Now contrast that harmless email with one that reads "win free free free money n
 | **Total**     |       | **10**    | **3**      |
 
 Sheesh! 10 points for spam against 3 for regular. This one goes straight to the spam folder! Notice that even though "free" appears in regular emails too, cramming it in three times only made things worse for the spammer (mhehe).
+
+Try it yourself! Pick an email below, or write your own, and see how your filter scores it.
+
+<SpamFilter />
 
 ## Why "bag of words"?
 

@@ -1,0 +1,433 @@
+---
+/**
+ * SpamFilter: the bag-of-words filter from part 1, scoring emails exactly
+ * like the post does: for every vocabulary word in the email, add up how
+ * often it appeared in spam and in regular emails during training
+ * (multiplied by how often it appears in the email), then compare totals.
+ *
+ * Readers pick an email from a small inbox, or type their own.
+ *
+ * Usage in MDX:
+ *   import SpamFilter from '../../components/SpamFilter.astro';
+ *   <SpamFilter />
+ */
+
+// What the filter learned from the four example emails: [in spam, in regular]
+const COUNTS: Record<string, [number, number]> = {
+  win: [1, 0],
+  free: [2, 1],
+  money: [2, 0],
+  now: [1, 0],
+  lunch: [0, 1],
+  friday: [0, 2],
+  meeting: [0, 1],
+};
+
+interface Email {
+  from: string;
+  subject: string;
+  time: string;
+}
+
+const emails: Email[] = [
+  { from: 'HR', subject: 'Free lunch after Friday meeting', time: '10:24' },
+  { from: 'Lucky Winner Club', subject: 'win free free free money now', time: '09:12' },
+  { from: 'Unknown sender', subject: 'fr33 m0neyzzz', time: 'Mon' },
+];
+
+type Row = { word: string; times: number; spam: number; regular: number; known: boolean };
+type Result = { rows: Row[]; spam: number; regular: number; verdict: 'spam' | 'inbox' };
+
+const toWords = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+function judge(subject: string): Result {
+  // count each word once per email, like the vector does
+  const order: string[] = [];
+  const times: Record<string, number> = {};
+  for (const w of toWords(subject)) {
+    if (!(w in times)) order.push(w);
+    times[w] = (times[w] ?? 0) + 1;
+  }
+  const rows: Row[] = order.map((w) => {
+    const c = COUNTS[w];
+    return c
+      ? { word: w, times: times[w], spam: c[0] * times[w], regular: c[1] * times[w], known: true }
+      : { word: w, times: times[w], spam: 0, regular: 0, known: false };
+  });
+  const spam = rows.reduce((t, r) => t + r.spam, 0);
+  const regular = rows.reduce((t, r) => t + r.regular, 0);
+  return { rows, spam, regular, verdict: spam > regular ? 'spam' : 'inbox' };
+}
+
+const results = emails.map((e) => ({ ...e, res: judge(e.subject) }));
+// a word points to spam when it showed up in spam more often than in regular emails
+const VOCAB = Object.entries(COUNTS).map(([w, [sp, rg]]) => ({ word: w, spam: sp > rg }));
+const config = JSON.stringify({ counts: COUNTS });
+---
+
+<script is:inline>document.documentElement.classList.add('js');</script>
+<figure class="spamfilter" data-config={config}>
+  <ul class="sf-mail" role="tablist" aria-label="Pick an email">
+    {results.map((r, i) => (
+      <li>
+        <button type="button" role="tab" class="sf-mail-item" aria-selected={i === 0 ? 'true' : 'false'} data-i={i}>
+          <svg class="sf-mail-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="3" y="5.5" width="18" height="13" rx="2" />
+            <path d="M3.5 7l8.5 6.5L20.5 7" />
+          </svg>
+          <span class="sf-mail-text">
+            <span class="sf-mail-from">{r.from}</span>
+            <span class="sf-mail-subject">{r.subject}</span>
+          </span>
+          <span class="sf-mail-time">{r.time}</span>
+        </button>
+      </li>
+    ))}
+    <li class="sf-js">
+      <form class="sf-mail-item sf-own" data-i={results.length}>
+        <svg class="sf-mail-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+          <path d="M14.5 7.5l2 2" />
+        </svg>
+        <span class="sf-mail-text">
+          <label class="sf-mail-from" for="sf-own-input">Write your own</label>
+          <input id="sf-own-input" class="sf-own-input" type="text" maxlength="80" placeholder="Type an email subject…" autocomplete="off" />
+        </span>
+        <button type="submit" class="sf-own-go">Check</button>
+      </form>
+    </li>
+  </ul>
+
+  <div class="sf-vocab">
+    <div class="sf-vocab-label">Vocabulary from your example emails</div>
+    <ul class="sf-vocab-list">
+      {VOCAB.map((v) => (
+        <li class={`sf-vocab-word ${v.spam ? 'sf-v-spam' : 'sf-v-regular'}`}>
+          <span class="sf-dot" aria-hidden="true"></span>{v.word}
+        </li>
+      ))}
+    </ul>
+    <div class="sf-legend">
+      <span class="sf-v-spam"><span class="sf-dot" aria-hidden="true"></span>points to spam</span>
+      <span class="sf-v-regular"><span class="sf-dot" aria-hidden="true"></span>points to regular email</span>
+    </div>
+  </div>
+
+  <div class="sf-panels">
+    {results.map((r, i) => (
+      <div class="sf-panel" data-i={i} hidden={i !== 0}>
+        <div class="sf-col">
+          <div class="sf-head">
+            <span class="sf-col-title">Your filter</span>
+            <span class="sf-h-num sf-cs">In spam</span>
+            <span class="sf-h-num sf-cr">In regular</span>
+          </div>
+          <ul class="sf-words">
+            {r.res.rows.map((row) => (
+              <li class:list={['sf-word', !row.known && 'sf-unknown']}>
+                <span class="sf-w">
+                  {row.word}
+                  {row.times > 1 && <span class="sf-times"> ×{row.times}</span>}
+                </span>
+                {row.known ? (
+                  <>
+                    <span class="sf-num sf-cs">{row.spam}</span>
+                    <span class="sf-num sf-cr">{row.regular}</span>
+                  </>
+                ) : (
+                  <span class="sf-ignored">ignored, not in vocabulary</span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <div class="sf-total">
+            <span class="sf-w">Total</span>
+            <span class="sf-num sf-cs">{r.res.spam}</span>
+            <span class="sf-num sf-cr">{r.res.regular}</span>
+          </div>
+          <div class:list={['sf-verdict', `sf-verdict-${r.res.verdict}`]}>
+            {r.res.verdict === 'spam' ? 'To the spam folder!' : 'Cleared for inbox'}
+          </div>
+        </div>
+      </div>
+    ))}
+    <div class="sf-panel sf-panel-own" data-i={results.length} hidden></div>
+  </div>
+
+  <figcaption>More points for spam than for regular means spam.</figcaption>
+</figure>
+
+<script>
+  type Counts = Record<string, [number, number]>;
+
+  const toWords = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 8);
+
+  function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = '') {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  }
+
+  // Same scoring as the server side, for the reader's own email
+  function renderOwn(panel: HTMLElement, subject: string, counts: Counts) {
+    const order: string[] = [];
+    const times: Record<string, number> = {};
+    for (const w of toWords(subject)) {
+      if (!(w in times)) order.push(w);
+      times[w] = (times[w] ?? 0) + 1;
+    }
+    let spam = 0;
+    let regular = 0;
+    const col = el('div', 'sf-col');
+    const head = el('div', 'sf-head');
+    head.append(el('span', 'sf-col-title', 'Your filter'), el('span', 'sf-h-num sf-cs', 'In spam'), el('span', 'sf-h-num sf-cr', 'In regular'));
+    const list = el('ul', 'sf-words');
+    for (const w of order) {
+      const c = counts[w];
+      const li = el('li', c ? 'sf-word' : 'sf-word sf-unknown');
+      const name = el('span', 'sf-w', w);
+      if (times[w] > 1) name.append(el('span', 'sf-times', ` ×${times[w]}`));
+      li.append(name);
+      if (c) {
+        spam += c[0] * times[w];
+        regular += c[1] * times[w];
+        li.append(el('span', 'sf-num sf-cs', String(c[0] * times[w])), el('span', 'sf-num sf-cr', String(c[1] * times[w])));
+      } else {
+        li.append(el('span', 'sf-ignored', 'ignored, not in vocabulary'));
+      }
+      list.append(li);
+    }
+    const total = el('div', 'sf-total');
+    total.append(el('span', 'sf-w', 'Total'), el('span', 'sf-num sf-cs', String(spam)), el('span', 'sf-num sf-cr', String(regular)));
+    const isSpam = spam > regular;
+    const verdict = el('div', `sf-verdict sf-verdict-${isSpam ? 'spam' : 'inbox'}`, isSpam ? 'To the spam folder!' : 'Cleared for inbox');
+    col.append(head, list, total, verdict);
+    panel.replaceChildren(col);
+  }
+
+  document.querySelectorAll<HTMLElement>('.spamfilter').forEach((fig) => {
+    const { counts } = JSON.parse(fig.dataset.config!) as { counts: Counts };
+    const items = Array.from(fig.querySelectorAll<HTMLElement>('.sf-mail-item'));
+    const panels = Array.from(fig.querySelectorAll<HTMLElement>('.sf-panel'));
+    const ownForm = fig.querySelector<HTMLFormElement>('.sf-own')!;
+    const ownInput = fig.querySelector<HTMLInputElement>('.sf-own-input')!;
+    const ownPanel = fig.querySelector<HTMLElement>('.sf-panel-own')!;
+    const show = (i: number) => {
+      items.forEach((t, k) => t.setAttribute('aria-selected', String(k === i)));
+      panels.forEach((p, k) => (p.hidden = k !== i));
+    };
+    items.forEach((t, i) => {
+      if (t === ownForm) return;
+      t.addEventListener('click', () => show(i));
+    });
+    ownForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!ownInput.value.trim()) {
+        ownInput.focus();
+        return;
+      }
+      renderOwn(ownPanel, ownInput.value, counts);
+      show(items.indexOf(ownForm));
+    });
+  });
+</script>
+
+<style is:global>
+  .spamfilter {
+    --sf-spam: var(--accent);
+    --sf-regular: var(--slate);
+    --sf-green-bg: #dff3e6;
+    --sf-green-fg: #1e6b40;
+    --sf-red-bg: #f9e0dc;
+    --sf-red-fg: #a83a2c;
+    margin: 1.6em 0 1.8em;
+    padding: 16px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--paper-2);
+    font-family: var(--font-ui);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .spamfilter {
+      --sf-green-bg: #1d3a2a;
+      --sf-green-fg: #8ee0b2;
+      --sf-red-bg: #45231e;
+      --sf-red-fg: #f4a092;
+    }
+  }
+  :root[data-theme='dark'] .spamfilter {
+    --sf-green-bg: #1d3a2a;
+    --sf-green-fg: #8ee0b2;
+    --sf-red-bg: #45231e;
+    --sf-red-fg: #f4a092;
+  }
+  html:not(.js) .spamfilter .sf-js { display: none !important; }
+
+  /* the inbox */
+  .spamfilter .sf-mail {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--paper);
+  }
+  .spamfilter .sf-mail li + li { border-top: 1px solid var(--rule); }
+  .spamfilter .sf-mail-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    margin: 0;
+    padding: 10px 14px;
+    border: none;
+    border-left: 3px solid transparent;
+    background: none;
+    font: inherit;
+    text-align: left;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .spamfilter button.sf-mail-item:hover { background: var(--paper-2); }
+  .spamfilter .sf-mail-item[aria-selected='true'] { background: var(--slate-soft); border-left-color: var(--slate); }
+  .spamfilter .sf-mail-item:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .spamfilter .sf-mail-icon {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: var(--ink-soft);
+    stroke-width: 1.6;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+  }
+  .spamfilter .sf-mail-item[aria-selected='true'] .sf-mail-icon { stroke: var(--slate); }
+  .spamfilter .sf-mail-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .spamfilter .sf-mail-from { font-size: 0.8rem; color: var(--ink-soft); }
+  .spamfilter .sf-mail-subject { font-size: 0.95rem; font-weight: 600; }
+  .spamfilter .sf-mail-time { flex: none; font-size: 0.78rem; color: var(--ink-soft); }
+
+  /* write your own */
+  .spamfilter .sf-own { cursor: default; }
+  .spamfilter .sf-own-input {
+    font: inherit;
+    font-size: 0.95rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    margin-left: -8px;
+    border-radius: 6px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    min-width: 0;
+  }
+  .spamfilter .sf-own-go {
+    flex: none;
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--slate);
+    background: var(--paper);
+    color: var(--slate);
+    cursor: pointer;
+  }
+  .spamfilter .sf-own-go:hover { background: var(--slate-soft); }
+
+  /* vocabulary: one list, with a small dot for spam or regular */
+  .spamfilter .sf-vocab { margin: 0 0 14px; text-align: center; }
+  .spamfilter .sf-vocab-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin-bottom: 8px;
+  }
+  .spamfilter .sf-vocab-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; }
+  .spamfilter .sf-vocab-word {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    padding: 2px 9px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, var(--ink) 40%, transparent);
+    background: var(--paper);
+    color: color-mix(in srgb, var(--ink) 82%, transparent);
+  }
+  .spamfilter .sf-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .spamfilter .sf-v-spam .sf-dot { background: var(--sf-spam); }
+  .spamfilter .sf-v-regular .sf-dot { background: var(--sf-regular); }
+  .spamfilter .sf-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin-top: 6px; font-size: 0.78rem; color: var(--ink-soft); }
+  .spamfilter .sf-legend > span { display: inline-flex; align-items: center; gap: 5px; }
+
+  /* all panels sit in the same spot, so switching emails doesn't move the page */
+  .spamfilter .sf-panels { display: grid; max-width: 30rem; margin: 0 auto; }
+  .spamfilter .sf-panel { grid-area: 1 / 1; }
+  .spamfilter .sf-panel[hidden] { display: block; visibility: hidden; }
+
+  .spamfilter .sf-col {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+  }
+  .spamfilter .sf-head,
+  .spamfilter .sf-word,
+  .spamfilter .sf-total {
+    display: grid;
+    grid-template-columns: 1fr 5.5rem 5.5rem;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .spamfilter .sf-head { padding-bottom: 6px; border-bottom: 1px solid var(--rule); }
+  .spamfilter .sf-col-title { font-weight: 700; font-size: 0.95rem; color: var(--ink); }
+  .spamfilter .sf-h-num { font-size: 0.78rem; font-weight: 600; text-align: right; }
+  .spamfilter .sf-words { list-style: none; margin: 0; padding: 0; }
+  .spamfilter .sf-word { padding: 6px 0; border-bottom: 1px solid var(--rule); font-size: 0.9rem; }
+  .spamfilter .sf-w { font-family: var(--font-mono); font-size: 0.86rem; color: var(--ink); }
+  .spamfilter .sf-times { font-family: var(--font-ui); font-size: 0.8rem; color: var(--ink-soft); }
+  .spamfilter .sf-num { font-family: var(--font-mono); font-size: 0.86rem; text-align: right; }
+  .spamfilter .sf-cs { color: var(--sf-spam); }
+  .spamfilter .sf-cr { color: var(--sf-regular); }
+  .spamfilter .sf-unknown .sf-w { color: var(--ink-soft); opacity: 0.7; }
+  .spamfilter .sf-ignored { grid-column: 2 / -1; text-align: right; font-size: 0.8rem; font-style: italic; color: var(--ink-soft); opacity: 0.75; }
+  .spamfilter .sf-total { padding-top: 8px; font-weight: 700; }
+  .spamfilter .sf-total .sf-w { font-family: var(--font-ui); font-size: 0.9rem; }
+  .spamfilter .sf-total .sf-num { font-weight: 700; }
+
+  .spamfilter .sf-verdict {
+    margin-top: 10px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    text-align: center;
+    font-weight: 700;
+    font-size: 0.98rem;
+  }
+  .spamfilter .sf-verdict-inbox { background: var(--sf-green-bg); color: var(--sf-green-fg); border: 1px solid var(--sf-green-fg); }
+  .spamfilter .sf-verdict-spam { background: var(--sf-red-bg); color: var(--sf-red-fg); border: 1px solid var(--sf-red-fg); }
+
+  .spamfilter figcaption {
+    margin-top: 12px;
+    text-align: center;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    color: var(--ink-soft);
+  }
+</style>

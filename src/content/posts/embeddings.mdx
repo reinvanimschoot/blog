@@ -1,0 +1,257 @@
+---
+title: "Similar words, similar numbers: embeddings"
+description: "Bag of words has no idea that \"money\" and \"cash\" mean almost the same thing. So how do you give a computer a sense of which words are alike? Enter embeddings."
+pubDate: 2026-10-28
+series: "How LLMs work"
+part: 2
+draft: false
+---
+
+import WordMap from '../../components/WordMap.astro';
+import WordPairs from '../../components/WordPairs.astro';
+import TrainingMap from '../../components/TrainingMap.astro';
+import SpamCompare from '../../components/SpamCompare.astro';
+
+This post is the second in a series where I endeavor to explain how large language models (LLMs) work, for people who have little or no technical background. By the end, you'll (hopefully) understand how an LLM like Claude or ChatGPT turns your questions into answers, with no math or coding background needed. We'll take it step by step, one problem at a time.
+
+As you might expect, this post builds heavily on concepts introduced in [the previous one](/posts/bag-of-words/). If you haven't read that yet, I encourage you to do so before continuing.
+
+## The spam strikes back
+
+Let's return to our IT guy fever dream.
+
+Thanks to bag of words, your spam filter has been performing like a champ. HR's free lunches are well attended again and your CEO is as happy as a CEO can get. As for the deposed royals in need of a quick loan, they seem to have mostly given up.
+
+Mostly.
+
+One morning, a new wave of spam floods the inboxes, all with the same subject line:
+
+> Claim your complimentary cash today!
+
+Not a single email gets caught. You check your filter and quickly see why. Words like "complimentary", "cash" and "claim" never appeared in your example emails, so your filter was never trained to recognize them. As far as it's concerned, they don't even exist, so it simply ignores them.
+
+You could collect a pile of these new emails and train your filter again, but these spammers are deviously quick. While you're busy teaching it to catch "cash" and "claim", they might already have switched to emails titled "Access your monetary compensation", and you'd have to start all over again. You feel like a dog chasing its tail. Where does it end?!
+
+It seems the spammers have exposed bag of words' biggest limitation: it has no idea which words are similar, or how they relate to each other. "Money" and "cash" might be practically the same thing to you and me, but to bag of words they are just two collections of characters, as similar to each other as "money" and "spaceship". Your filter has, of course, learned that "money" is a strong spam signal. It just has no way of telling that "cash" is its close cousin.
+
+This conundrum brings us to our next challenge: how can we give a computer a sense of which words are alike?
+
+_Spoiler alert_: the answer computer scientists came up with is called **embeddings**, and one of the first models to really make them work was **word2vec**. It was invented and released by a team at Google in 2013, and it became so influential that its core philosophy still sits at the heart of every LLM today. Before we look at how it works, though, let's see if we can come up with the idea ourselves.
+
+## You shall know a word by the company it keeps
+
+Back to our spam infestation we go. You decide to take a step back and rethink your filter from the ground up. You get the feeling this isn't really about computers anymore, but about language. After all, you're trying to figure out which words are similar. So you start reading up on linguistics and, by chance, stumble upon a quote from 1957 by the linguist J.R. Firth:
+
+_"You shall know a word by the company it keeps."_
+
+This intrigues you, and you dig a little deeper.
+
+As it turns out, what Firth meant was that words that show up surrounded by similar words tend to have similar meanings. (Funnily enough, our old friend Zellig Harris made the same point three years earlier, in that 1954 paper of his.) To see what that means, try filling in the blanks below:
+
+- "I fed the ___ this morning"
+- "The ___ was sleeping on the couch"
+- "The ___ howled"
+
+Words like "dog", "puppy", even "wolf" or "hound" (mostly) fit. "Spreadsheet" or "hydraulics" obviously do not. Which goes to show you can learn a lot about a word just from the words around it, without anyone ever explaining what it means!
+
+The same goes for your spam problem. "Money" and "cash" keep the same company too:
+
+- "I need to withdraw some ___ from the bank"
+- "Sorry, I'm a bit short on ___ this month"
+
+So if a computer could track which words tend to show up around which other words, it might learn that "money" and "cash" are related.
+
+## Making up numbers
+
+Of course, computers still need numbers to work with. And unlike with bag of words, it's not enough to just count which words show up in an email. Your new filter should be able to compare individual words with each other and judge how similar they are. For that to work, each word will probably need numbers of its own. And that's not all. Similar words should also end up with similar numbers. Otherwise, how would a computer tell they're alike?
+
+Hmmm. What would those numbers look like? You decide to do a little experiment.
+
+You grab a notepad and write down four words: "money" and "cash" from your cursed spam emails, and an entirely different pair, "dog" and "hound". It's pretty clear these words fall into two groups. "Money" and "cash" are all about finance, while "dog" and "hound" are all about animals. So you come up with two questions to ask each word. How much does it have to do with finance? And how much does it have to do with animals? You turn each answer into a score between 0 and 1, where 0 means "nothing at all" and 1 means "everything". That gives each word two numbers:
+
+|Word|Finance|Animals|
+|---|---|---|
+|money|0.95|0.05|
+|cash|0.9|0.1|
+|dog|0.05|0.95|
+|hound|0.1|0.9|
+
+That looks good! Each of the four words has its own set of numbers that captures part of its meaning. "Money" is now represented as `[0.95, 0.05]`, meaning it has a lot to do with finance (0.95) and very little to do with animals (0.05). "Dog" is the other way around: `[0.05, 0.95]`. And look: "money" and "cash" got almost the same numbers, just like "dog" and "hound". Similar words, similar numbers. That's exactly what you were after!
+
+And it gets even clearer when you draw it. Since every word has two numbers, you can plot them on a simple graph, like the ones you probably remember from math class. The first number, the finance score, decides how far right a word goes on the x-axis. The second number, the animal score, decides how high up it goes on the y-axis:
+
+<WordMap />
+
+As you can see, "money" and "cash" end up right next to each other in the bottom-right corner, while "dog" and "hound" sit together in the top-left. On this graph, closeness means similarity: the more two words have in common, the closer together they end up.
+
+And that's actually a step in the right direction for your spam filter! Maybe it doesn't need to know what "cash" means at all, as long as it can tell that its numbers are very close to those of "money".
+
+## Every number counts
+
+Before we get back to your spam filter, let's take a closer look at these numbers, and more specifically, the shape they come in. Each word gets an ordered list of numbers, where every number has a distinct meaning.
+
+If you're getting a sense of déjà vu, don't worry. It's not a glitch in the Matrix. We've actually seen this shape before: bag of words used the exact same one. In other words, these numbers are also vectors!
+
+And yet, these vectors are quite different from the ones we saw in bag of words. There, a vector described an entire email: it had a spot for every word in the vocabulary, counting how many times that word showed up in the email. Even words that didn't show up at all still got a spot, with a zero.
+
+Remember "win free money"? In our tiny example with a vocabulary of only seven words, its vector became `[1, 1, 1, 0, 0, 0, 0]`: a one for each of the three words in the email, and a zero for each of the four that weren't. Seven numbers is manageable. But with a vocabulary of 50,000 words, that same email would become a list of 50,000 numbers: three ones and 49,997 zeros.
+
+A vector like that, made up almost entirely of zeros, is called a **sparse vector**. Most of its numbers only tell you which words aren't there. In this case, just three of them say anything about the email itself.
+
+Let's compare that to the "money" vector on your notepad: `[0.95, 0.05]`. Instead of describing a whole email, this vector describes a single word. It only has two numbers, and both of them say something about the word itself. And unlike in bag of words, the size of your vocabulary doesn't matter. Seven words or 50,000, every word gets one number per question, and that's it.
+
+Vectors where each number counts and has a meaning are called **dense vectors**. And when a dense vector represents a word, we call it... _drum roll_... an **embedding**!
+
+Without even realizing it, you've just made your very first embeddings. Two-dimensional ones, if you will, since every word gets two numbers. Eager to see how far you can take your new approach, you add a few more words to your notepad: "coin", "salary", "wolf" and "puppy".
+
+## Too many questions
+
+Here's where the new words end up. Feel free to drag them around, or add a few words of your own.
+
+<WordMap
+  editable
+  words={[
+    { word: 'money', x: 0.95, y: 0.05, group: 'a', label: 'right' },
+    { word: 'cash', x: 0.9, y: 0.1, group: 'a', label: 'left' },
+    { word: 'coin', x: 0.75, y: 0.05, group: 'a', label: 'left' },
+    { word: 'salary', x: 0.9, y: 0.15, group: 'a', label: 'right' },
+    { word: 'dog', x: 0.05, y: 0.95, group: 'b', label: 'right' },
+    { word: 'hound', x: 0.1, y: 0.9, group: 'b', label: 'right' },
+    { word: 'puppy', x: 0.15, y: 0.85, group: 'b', label: 'right' },
+    { word: 'wolf', x: 0.1, y: 0.8, group: 'b', label: 'right' },
+  ]}
+/>
+
+The more words you add, though, the clearer a problem becomes. With only two questions (and thus only two numbers) to go on, there is little room for nuance, and words that aren't all that similar still end up bunched together. "Coin" and "salary" land right next to "cash", while "wolf" and "puppy" huddle up with "dog". But surely a coin and a salary aren't the same thing, and neither are a wolf and a puppy?
+
+Your first instinct is to just add more questions. This was only a simple experiment, after all. To accurately score a wider variety of words, like "spreadsheet" or "lunch", you'll need more nuance, and every extra question you ask gives each word one more number to work with.
+
+But now that you actually have to come up with the questions, you hesitate. Which ones should you even ask? Is it alive? How big is it? Does it belong in an office? Can you eat it? Can you fry it? And for that matter, how many questions are enough? How many would you need to capture the nuance and richness of every word in a language?
+
+You decide to build up your list one question at a time, and for a while, you bravely plow on. But it's no use. For every question you make up, you immediately think of two words it can't tell apart. And every new word you add to your notepad seems to call for yet another question. Even with hundreds of them, you'd barely scratch the surface of all the subtle differences between words.
+
+As if that weren't enough, you spot another all-too-familiar problem. For every question you come up with, you'd have to go through your entire vocabulary and give every single word a score. By hand. Even if you limited yourself to ten questions, scoring a vocabulary of 50,000 words would mean filling in 500,000 scores. It's your hand-made spam list all over again, only much, much worse.
+
+## Ditching the questions
+
+Then it hits you, again. The problem isn't the embeddings, it's you! You're the one making up the questions and filling in all the scores, and there's only so much a single human can think of, let alone write down.
+
+And the more you think about it, the more you realize that what made your approach work in the first place wasn't the questions at all. Sure, they helped you fill in the scores for each word, but the computer would never see them, only the resulting numbers. And it's the pattern in those numbers that really matters: similar words should end up with similar numbers, close together on your graph.
+
+So what if you skipped the questions altogether? What if you gave every word a list of numbers that don't stand for any particular question and, just like with your spam filter, let the computer learn their values by itself? As long as similar words end up close together, who cares what each individual number stands for?
+
+After reading the previous paragraph, you might feel like I kicked you into the deep end of the pool. Why would we want to represent words with numbers we can't make sense of ourselves?
+
+Well, because named questions will only get you so far. Every question you come up with is limited to what you can think of and put into words, and as you just found out the hard way, language is far too rich for that to work beyond a handful of words. On top of that, most of your questions don't even apply to most words. Can you fry a spreadsheet? Is a salary alive? For the vast majority of words, the answer to most of your human-devised questions is simply zero, which means a lot of your numbers go to waste.
+
+The computer has neither of these problems. Its numbers don't have to answer any particular question, so it's also not limited to what humans can put into words. It can pick up on subtle differences between words that mere mortals like you and me would never think to ask about. And since its numbers aren't tied to questions that only apply to some words, it's free to make every number count for every word. Give it enough numbers, and every word gets its own very precise spot, right next to the words it has most in common with.
+
+If this still feels a bit abstract, don't worry. It'll become clearer once we see how the computer actually learns those numbers.
+
+## Learning from the company words keep
+
+Learn them from what, though? With your spam filter, you had a pile of emails that you'd already sorted into spam and regular. You don't have anything like that for word meanings. There's no list telling you that "cash" and "money" belong together.
+
+Or is there? Suddenly you remember that quote from J.R. Firth: "You shall know a word by the company it keeps."
+
+Assuming Firth is right, it might be as simple as looking at a word's neighbors. If "money" and "cash" keep turning up next to the same words, like "withdraw", "bank" and "spend", that alone could be enough to call them similar.
+
+That would also mean you don't need a sorted pile of anything. You would only need text, and lots of it. News articles, books, websites, anything really. The more sentences a word shows up in, the more neighbors there are to compare. If the computer could go through all that text and keep track of which words tend to show up near each other, it might just be able to work out the numbers on its own.
+
+But how would that work in practice? How do you keep track of which words appear as neighbors? To test the waters, you decide to start with a single sentence you've seen before:
+
+> "I need to withdraw some cash from the bank"
+
+You pick a word, say "cash", and look at its left and right neighbors. How many neighbors, though? Well, you don't want to include only the words right next to it, since that might not give you enough information. But you also don't want to include too many, since words that are seven places apart could hardly be called neighbors anymore. You decide to go with two on each side.
+
+This gives you "withdraw" and "some" to the left, and "from" and "the" to the right. Then you pair "cash" up with each of them: `(cash, withdraw)`, `(cash, some)`, `(cash, from)` and `(cash, the)`. Et voilà, each of these **word pairs** is a tiny piece of evidence that the two words tend to appear close together. After that, you move on to the next word, "from", and do the same. And the next, and the next, until you've gone through the whole sentence.
+
+Go ahead and give it a try below. To keep things simple, we'll start at the beginning of the sentence here: add the pairs for each word, and watch the list of all pairs grow. You can also change how many neighbors to look at, or type in a sentence of your own to see which pairs it produces.
+
+<WordPairs editable />
+
+Now imagine letting the computer do that for every sentence in all those news articles, books and websites. You'd end up with millions of word pairs in no time, without having to lift a finger! And these word pairs can play the exact same role as your sorted pile of emails. They're the examples the computer can learn from.
+
+## A rigged guessing game
+
+But how does it actually learn from them?
+
+Well, let's go back to your notepad graph. This time, instead of carefully picking the scores and placing the words yourself, you give every word two random numbers, which scatters them all over the graph:
+
+<WordMap
+  shuffle
+  xLabel="First number"
+  yLabel="Second number"
+  words={[
+    { word: 'money', group: 'a' },
+    { word: 'cash', group: 'a' },
+    { word: 'coin', group: 'a' },
+    { word: 'salary', group: 'a' },
+    { word: 'withdraw', group: 'n' },
+    { word: 'bank', group: 'n' },
+    { word: 'dog', group: 'b' },
+    { word: 'hound', group: 'b' },
+    { word: 'puppy', group: 'b' },
+    { word: 'wolf', group: 'b' },
+  ]}
+/>
+
+As you can see, it's complete chaos. "Money" might end up close to "puppy", and "dog" right next to "withdraw". Up is down, down is up and pigs are flying! But that's fine, because cleaning up this mess is no longer your job. It's the computer's!
+
+And it does this by playing a guessing game with your list of word pairs. Say it picks the pair `(cash, withdraw)`. Since every word got random numbers, "cash" happened to end up with `[0.8, 0.1]` and "withdraw" with `[0.2, 0.7]`. The computer looks at these numbers and asks itself: are they similar enough for these two words to be neighbors in a text? If their numbers are close, it guesses yes. If they're far apart, it guesses no. And right now, the numbers for "cash" and "withdraw" are so different that the two words are nowhere near each other on the graph, so the computer guesses no.
+
+Wrong! This is a real word pair, straight from your sentence, so "cash" and "withdraw" really were neighbors.
+
+No surprise there, of course, since their numbers were completely random. But because "cash" and "withdraw" are in fact neighbors in your sentence, they should end up closer together on the graph. So the computer updates their numbers accordingly. Not a lot, mind you! It only **nudges** them a tiny bit, just enough to move the two words a little closer to each other.
+
+After the nudge, "cash" might go from `[0.8, 0.1]` to `[0.78, 0.12]`, and "withdraw" from `[0.2, 0.7]` to `[0.22, 0.68]`. Since a word's numbers decide where it sits on the graph, both words shift a little toward each other.
+
+Notice that if the computer had to guess `(cash, withdraw)` again right away, it would still say "nope, not neighbors." The two words have barely moved. But that's exactly how it should be. One word pair is only a tiny piece of evidence, and two words showing up together once shouldn't be enough to make them neighbors on the graph. After all, meeting someone at a bar once doesn't make you best buds either (at least, I hope it doesn't). It's only when the same words keep showing up together, again and again and again, across millions of pairs, that all those tiny nudges add up.
+
+After watching the computer play for a while, though, you notice something fishy. The game is rigged! Every word pair in your list is made of actual neighbors, so the right answer is always yes. There's nothing to guess. And that's a problem, because if all the computer ever does is pull words closer together, sooner or later every word would end up in one big pile in the middle of the graph.
+
+To keep the computer on its toes, you decide to throw in some fake pairs: two random words that have nothing to do with each other, like `(cash, howled)`. For every real pair, the computer now also gets a fake one (in practice, often a few). And for fake pairs, the right answer is no. So whenever the computer wrongly guesses yes, it nudges their numbers so the two words drift a little further apart. Now the computer actually has to tell real pairs from fake ones.
+
+Repeat this a few million times, and the chaos slowly starts to sort itself out. Words that keep showing up near each other drift together, and words that don't drift apart.
+
+<TrainingMap />
+
+And here's the clever bit. "Money" and "cash" hardly ever show up as actual neighbors. When was the last time you heard someone say "I need money cash"? So the computer rarely pulls them together directly. But they do keep showing up near the same words, like "withdraw", "bank", "spend" and "spare". Every time "money" shows up near "bank", it gets nudged a little toward "bank". And every time "cash" does, the same happens to "cash". After thousands of these nudges, both words have been pulled toward so many of the same neighbors that they end up right next to each other.
+
+Think of them as two people who've never even met, but who keep turning up at the same places: the same bar, the same bookshop, the same jazz concerts, the same Sunday market. At some point, you'd probably bet they have quite a bit in common.
+
+## Meet word2vec
+
+And that, more or less, is exactly how **word2vec** works. Just like you, the researchers at Google didn't score a single word by hand. Instead, they gave the computer a gigantic pile of text (around 100 billion words from Google News articles) and let it play the guessing game until the numbers fell into place.
+
+They did, however, use a lot more numbers. Two numbers were great for your experiment, since you could draw them on a graph. But with millions of very diverse words to place, two numbers simply don't leave enough room to tell them all apart and capture enough nuance. Adding more numbers doesn't come for free, though. Every time the computer nudges a word, it has to adjust every single one of its numbers, so with hundreds of numbers instead of two, each nudge takes a lot more calculating, especially when it needs to happen billions of times during training. In the end, it's a balancing act: enough numbers to capture all that nuance, but not so many that your computer catches fire.
+
+For word2vec, the researchers settled on 300 numbers per word, which turned out to be a sweet spot. You might now be tempted to picture a graph with 300 directions, but you'd get a headache and your ears might start to bleed. It's impossible to visualize with brains that are used to three dimensions, but the idea is still the same as on your notepad: the closer two words are, the more they have in common.
+
+Numbers that a computer learns on its own like this have a name, by the way: **weights**. And we'll be seeing a lot more of them. Today's LLMs, for example, use thousands of numbers for every word, and that's only the start of it. In fact, if you put weights, embeddings and a gigantic pile of text together, you might already have an inkling of how LLMs themselves are trained.
+
+One last thing before we move on, though. Remember how your spam filter never actually understood what spam was? Well, the same goes for word2vec. The computer still has no idea what money is, or a puppy for that matter. "Money" and "cash" are still just labels, without any meaning attached to them. All it learned is that they keep showing up near the same words. And that just happens to be enough to put them right next to each other.
+
+## Complimentary cash, caught
+
+Now, let's return once more to your spam filter and those pesky "complimentary cash" emails that tripped up the last version. Armed with your trained embeddings, your new filter is no longer limited to the exact words it saw in your example emails. Instead, it can now check whether an email contains words that are similar to ones it already associates with spam. And what do you know, "complimentary" turns out to live right next to "free", just like "cash" lives next to "money".
+
+So "Claim your complimentary cash today!" finally lands in the spam folder, where it belongs. And a month later, when the spammers switch to "Access your monetary compensation", it's the same story. They can swap words all they like, but it won't do them any good.
+
+<SpamCompare />
+
+It should come as no surprise, then, that this idea quickly spread far beyond spam filters. Search engines used it to find pages that don't contain the exact words you searched for, and translation tools relied on it to match words across languages. Even music apps borrowed the trick for their "You might also like..." suggestions. They treat every playlist like a sentence and every song like a word, so songs that keep showing up in the same playlists end up with similar numbers, just like "money" and "cash".
+
+## The trouble with banks
+
+All in all, your updated filter is doing great work, and the inboxes are safe once again. Even the CEO hasn't complained in weeks. You should be happy, proud, content. And yet, there's one thing that keeps nagging at you. One shortcoming in your filter that still haunts you at night.
+
+You can't help but circle back to the example sentence you started with: "I need to withdraw some cash from the bank." And then you immediately think of another one: "We had a picnic on the river bank."
+
+Both sentences contain the word "bank", but it means something completely different in each. Yet word2vec gives "bank" exactly one vector, one list of numbers, no matter which sentence it shows up in. So instead of sitting near "money" or near "river", it ends up somewhere in between, in a sort of purgatory, not quite right for either.
+
+And it's not just "bank". Plenty of words change their meaning entirely depending on the words around them. And then there's word order. Remember "dog bites man" and "man bites dog"? Both sentences contain exactly the same three words, so they also get exactly the same numbers: one embedding for "dog", one for "bites" and one for "man". Nothing in those numbers tells the computer which word came first. As far as it's concerned, both sentences say the same thing. Even though one could be a news headline and the other a weird horror movie twist.
+
+Both problems come down to the same thing: a word's numbers never change, no matter what the sentence means or where the word sits in it.
+
+Imagine, for a moment, that a word's numbers could change depending on the sentence it's in. That "bank" could sit right next to "money" in one sentence, and right next to "river" in the next. Wouldn't that be something? Well, that's exactly what we'll explore in the next post, where we look at one of the first serious attempts to give words some context: reading a sentence one word at a time, and keeping track of everything that came before.

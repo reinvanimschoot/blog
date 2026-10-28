@@ -1,0 +1,714 @@
+---
+/**
+ * TrainingMap: watch randomly scattered words sort themselves out as the
+ * computer plays the guessing game with real (and fake) word pairs.
+ *
+ * Without JavaScript it shows the end result of a training run.
+ * With JavaScript, it starts from a random scatter and readers can press
+ * "Start training", pause, start over, and switch the fake pairs off to see
+ * everything collapse into one pile.
+ *
+ * The training itself lives in ./training-sim.ts (a simplified stand-in,
+ * not real word2vec).
+ *
+ * Usage in MDX:
+ *   import TrainingMap from '../../components/TrainingMap.astro';
+ *   <TrainingMap />
+ */
+import { scatter, train, pickStep, seeded, layoutLabels, SIDES, TOTAL_STEPS, type Pair } from './training-sim';
+
+interface Word {
+  word: string;
+  group: 'a' | 'b' | 'n'; // finance, animals, neutral (context words)
+}
+
+interface Props {
+  words?: Word[];
+  pairs?: [string, string][];
+  seed?: number;
+}
+
+const {
+  words = [
+    { word: 'money', group: 'a' },
+    { word: 'cash', group: 'a' },
+    { word: 'coin', group: 'a' },
+    { word: 'salary', group: 'a' },
+    { word: 'withdraw', group: 'n' },
+    { word: 'bank', group: 'n' },
+    { word: 'dog', group: 'b' },
+    { word: 'hound', group: 'b' },
+    { word: 'puppy', group: 'b' },
+    { word: 'wolf', group: 'b' },
+    { word: 'barked', group: 'n' },
+    { word: 'howled', group: 'n' },
+    { word: 'the', group: 'n' },
+  ],
+  // Real word pairs. Note that "money" and "cash" are never paired directly:
+  // they only share neighbors, just like in the text.
+  pairs = [
+    ['money', 'withdraw'], ['money', 'bank'], ['cash', 'withdraw'], ['cash', 'bank'],
+    ['coin', 'bank'], ['coin', 'withdraw'], ['salary', 'bank'], ['salary', 'withdraw'],
+    ['dog', 'barked'], ['dog', 'howled'], ['hound', 'barked'], ['hound', 'howled'],
+    ['puppy', 'barked'], ['puppy', 'howled'], ['wolf', 'barked'], ['wolf', 'howled'],
+    // "the" shows up next to words from both groups ("the bank", "the dog"),
+    // which is what pulls everything into one pile without fake pairs
+    ['the', 'bank'], ['the', 'cash'], ['the', 'money'], ['the', 'dog'], ['the', 'wolf'], ['the', 'puppy'],
+  ],
+  seed = 42,
+} = Astro.props;
+
+const idx = (w: string) => words.findIndex((o) => o.word === w);
+const real: Pair[] = pairs.map(([a, b]) => [idx(a), idx(b)] as Pair).filter(([a, b]) => a >= 0 && b >= 0);
+
+// Static fallback: run a full training once, here on the server
+const rnd = seeded(seed);
+const state = scatter(words.length, rnd);
+train(state, real, TOTAL_STEPS, true, rnd);
+
+// Plot geometry (SVG units), same as WordMap
+const SIZE = 300;
+const LEFT = 64;
+const TOP = 30;
+const W = LEFT + SIZE + 60;
+const H = TOP + SIZE + 62;
+const px = (v: number) => LEFT + v * SIZE;
+const py = (v: number) => TOP + SIZE - v * SIZE;
+const AX = LEFT;
+const AY = TOP + SIZE;
+const ticks = [0, 0.25, 0.5, 0.75, 1];
+// The first "Next up" pair, exactly as the browser will pick it, so the
+// readout below the graph has its final size from the very first paint
+const rnd2 = seeded(seed);
+const first = pickStep(scatter(words.length, rnd2), real, true, rnd2);
+const pt = ([a, b]: Pair) => `(${words[a].word}, ${words[b].word})`;
+
+const sides = layoutLabels(state.x.map(px), state.y.map(py), words.map((w) => w.word));
+const config = JSON.stringify({ words: words.map((w) => w.word), real, seed, size: SIZE, left: LEFT, top: TOP });
+---
+
+<script is:inline>document.documentElement.classList.add('js');</script>
+<figure class="trainmap tm-done" data-config={config}>
+  <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Words on a graph. After training, finance words sit together near withdraw and bank, and animal words sit together near barked and howled.">
+    {ticks.map((t) => (
+      <g class="tm-grid">
+        <line x1={px(t)} y1={AY} x2={px(t)} y2={TOP} />
+        <line x1={AX} y1={py(t)} x2={AX + SIZE} y2={py(t)} />
+      </g>
+    ))}
+    <line class="tm-axis" x1={AX} y1={AY} x2={AX + SIZE + 12} y2={AY} />
+    <line class="tm-axis" x1={AX} y1={AY} x2={AX} y2={TOP - 12} />
+    <path class="tm-arrow" d={`M ${AX + SIZE + 12} ${AY} l -7 -4 v 8 z`} />
+    <path class="tm-arrow" d={`M ${AX} ${TOP - 12} l -4 7 h 8 z`} />
+    {[0, 0.5, 1].map((t) => (
+      <>
+        <text class="tm-tick" x={px(t)} y={AY + 22} text-anchor="middle">{t.toFixed(1)}</text>
+        <text class="tm-tick" x={AX - 10} y={py(t) + 5} text-anchor="end">{t.toFixed(1)}</text>
+      </>
+    ))}
+    <text class="tm-axis-label" x={AX + SIZE / 2} y={AY + 50} text-anchor="middle">First number →</text>
+    <text class="tm-axis-label" x={18} y={TOP + SIZE / 2} text-anchor="middle" transform={`rotate(-90 18 ${TOP + SIZE / 2})`}>Second number →</text>
+
+    <line class="tm-link tm-link-real" x1="0" y1="0" x2="0" y2="0" />
+    <line class="tm-link tm-link-fake" x1="0" y1="0" x2="0" y2="0" />
+    <g class="tm-words">
+      {words.map((w, i) => {
+        const x = state.x[i];
+        const y = state.y[i];
+        const o = SIDES[sides[i]];
+        return (
+          <g class={`tm-pt tm-pt-${w.group}`}>
+            <circle cx={px(x)} cy={py(y)} r="6" />
+            <text x={px(x) + o.dx} y={py(y) + o.dy} text-anchor={o.anchor}>{w.word}</text>
+          </g>
+        );
+      })}
+    </g>
+  </svg>
+
+  <div class="tm-readout tm-js" aria-live="polite">
+    <div class="tm-row tm-row-head">Next up:</div>
+    <div class="tm-row tm-row-real">
+      <span class="tm-row-label">Real pair</span>
+      <span class="tm-row-pairs"><span class="tm-pair-line"><code>{pt(first.real)}</code><span class="tm-row-verb tm-verb-wide">→ will be nudged closer</span></span><span class="tm-row-verb tm-verb-narrow">→ will be nudged closer</span></span>
+    </div>
+    {first.fakes.length > 0 && (
+      <div class="tm-row tm-row-fake">
+        <span class="tm-row-label">{first.fakes.length > 1 ? 'Fake pairs' : 'Fake pair'}</span>
+        <span class="tm-row-pairs">{first.fakes.map((f, k) => (
+          <span class="tm-pair-line"><code>{pt(f)}</code>{k === 0 && <span class="tm-row-verb tm-verb-wide">→ will be nudged apart</span>}</span>
+        ))}<span class="tm-row-verb tm-verb-narrow">→ will be nudged apart</span></span>
+      </div>
+    )}
+  </div>
+
+  <div class="tm-controls tm-js">
+    <button type="button" class="tm-one">Train 1 pair</button>
+    <button type="button" class="tm-many">Train 500 pairs</button>
+    <button type="button" class="tm-play">Train all</button>
+  </div>
+  <div class="tm-controls tm-controls-2 tm-js">
+    <button type="button" class="tm-reset">Start over</button>
+    <label class="tm-fakes">
+      <input type="checkbox" checked />
+      <span>Fake pairs <span class="tm-hint">(switch off to rig the game)</span></span>
+    </label>
+  </div>
+  <div class="tm-progress tm-js">
+    <div class="tm-bar"><div class="tm-fill"></div></div>
+    <span class="tm-count">0</span>
+  </div>
+
+  <figcaption>After training, words that share neighbors end up together.</figcaption>
+</figure>
+
+<script>
+  import {
+    scatter,
+    train,
+    pickStep,
+    applyReal,
+    applyFakes,
+    separate,
+    seeded,
+    layoutLabels,
+    SIDES,
+    TOTAL_STEPS,
+    FAKES_PER_REAL,
+    type Pair,
+    type SimState,
+    type StepInfo,
+  } from './training-sim';
+
+  type Config = { words: string[]; real: Pair[]; seed: number; size: number; left: number; top: number };
+  const BATCH = 500; // pairs per "Next 500 pairs" click
+  const nf = new Intl.NumberFormat('en-US');
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const ease = (t: number) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+
+  function setup(fig: HTMLElement) {
+    const cfg: Config = JSON.parse(fig.dataset.config!);
+    const W = cfg.words;
+    const px = (v: number) => cfg.left + v * cfg.size;
+    const py = (v: number) => cfg.top + cfg.size - v * cfg.size;
+    const pts = Array.from(fig.querySelectorAll<SVGGElement>('.tm-pt'));
+    const play = fig.querySelector<HTMLButtonElement>('.tm-play')!;
+    const one = fig.querySelector<HTMLButtonElement>('.tm-one')!;
+    const many = fig.querySelector<HTMLButtonElement>('.tm-many')!;
+    const reset = fig.querySelector<HTMLButtonElement>('.tm-reset')!;
+    const fakes = fig.querySelector<HTMLInputElement>('.tm-fakes input')!;
+    const fill = fig.querySelector<HTMLElement>('.tm-fill')!;
+    const count = fig.querySelector<HTMLElement>('.tm-count')!;
+    const readout = fig.querySelector<HTMLElement>('.tm-readout')!;
+    const caption = fig.querySelector('figcaption')!;
+
+    let rnd = seeded(cfg.seed);
+    let s: SimState = scatter(W.length, rnd);
+    // what's currently drawn (can lag behind `s` while a move is animating)
+    let shownX = [...s.x];
+    let shownY = [...s.y];
+    let run = 0; // bumps whenever something interrupts what's going on
+    let auto = false;
+    let next: StepInfo | null = null; // the pair that will be trained next
+
+    const pairText = ([a, b]: Pair) => `(${W[a]}, ${W[b]})`;
+
+    // Readout under the graph: either one line of text, or a row per kind of pair
+    type Row = { kind: 'real' | 'fake' | 'head'; label: string; pairs?: Pair[]; verb: string };
+    function setLine(text: string) {
+      const p = document.createElement('p');
+      p.className = 'tm-line';
+      p.textContent = text;
+      readout.replaceChildren(p);
+    }
+    function setRows(rows: Row[]) {
+      readout.replaceChildren(
+        ...rows.map((r) => {
+          const row = document.createElement('div');
+          row.className = `tm-row tm-row-${r.kind}`;
+          if (r.kind === 'head') {
+            row.textContent = r.label;
+            return row;
+          }
+          const label = document.createElement('span');
+          label.className = 'tm-row-label';
+          label.textContent = r.label;
+          // one line per pair, with the "nudged" text on the first line only
+          const pairs = document.createElement('span');
+          pairs.className = 'tm-row-pairs';
+          // wide screens: the text sits next to the first pair;
+          // small screens: below the last pair (see the CSS)
+          const verb = (cls: string) => {
+            const v = document.createElement('span');
+            v.className = `tm-row-verb ${cls}`;
+            v.textContent = r.verb;
+            return v;
+          };
+          const list = r.pairs ?? [];
+          if (list.length === 0) {
+            const line = document.createElement('span');
+            line.className = 'tm-pair-line';
+            const v = document.createElement('span');
+            v.className = 'tm-row-verb';
+            v.textContent = r.verb;
+            line.append(v);
+            pairs.append(line);
+          }
+          list.forEach((pr, k) => {
+            const line = document.createElement('span');
+            line.className = 'tm-pair-line';
+            const c = document.createElement('code');
+            c.textContent = pairText(pr);
+            line.append(c);
+            if (k === 0) line.append(verb('tm-verb-wide'));
+            pairs.append(line);
+          });
+          if (list.length) pairs.append(verb('tm-verb-narrow'));
+          row.append(label, pairs);
+          return row;
+        }),
+      );
+    }
+
+    const linkReal = fig.querySelector<SVGLineElement>('.tm-link-real')!;
+    const linkFake = fig.querySelector<SVGLineElement>('.tm-link-fake')!;
+    let hlReal: Pair | null = null;
+    let hlFake: Pair | null = null;
+    const placeLink = (el: SVGLineElement, pair: Pair | null, cxs: number[], cys: number[]) => {
+      el.classList.toggle('tm-show', !!pair);
+      if (!pair) return;
+      el.setAttribute('x1', String(cxs[pair[0]]));
+      el.setAttribute('y1', String(cys[pair[0]]));
+      el.setAttribute('x2', String(cxs[pair[1]]));
+      el.setAttribute('y2', String(cys[pair[1]]));
+    };
+
+    function draw(x: number[], y: number[]) {
+      const cxs = x.map(px);
+      const cys = y.map(py);
+      placeLink(linkReal, hlReal, cxs, cys);
+      placeLink(linkFake, hlFake, cxs, cys);
+      const sides = layoutLabels(cxs, cys, W);
+      pts.forEach((pt, i) => {
+        const o = SIDES[sides[i]];
+        const c = pt.querySelector('circle')!;
+        c.setAttribute('cx', String(cxs[i]));
+        c.setAttribute('cy', String(cys[i]));
+        const t = pt.querySelector('text')!;
+        t.setAttribute('x', String(cxs[i] + o.dx));
+        t.setAttribute('y', String(cys[i] + o.dy));
+        t.setAttribute('text-anchor', o.anchor);
+      });
+      shownX = x;
+      shownY = y;
+      const done = Math.min(s.seen, TOTAL_STEPS);
+      fill.style.width = `${(done / TOTAL_STEPS) * 100}%`;
+      count.textContent = `${nf.format(s.seen)} word ${s.seen === 1 ? 'pair' : 'pairs'}`;
+    }
+
+    function highlight(real?: Pair, fake: Pair[] = []) {
+      hlReal = real ?? null;
+      hlFake = fake[0] ?? null;
+      placeLink(linkReal, hlReal, shownX.map(px), shownY.map(py));
+      placeLink(linkFake, hlFake, shownX.map(px), shownY.map(py));
+      pts.forEach((pt, i) => {
+        pt.classList.toggle('tm-hl-real', !!real && real.includes(i));
+        pt.classList.toggle('tm-hl-fake', fake.some((f) => f.includes(i)) && !(real && real.includes(i)));
+      });
+    }
+
+    // Glide from what's drawn now to the current training state
+    function glide(ms: number, token: number) {
+      const fromX = shownX;
+      const fromY = shownY;
+      const toX = [...s.x];
+      const toY = [...s.y];
+      return new Promise<void>((resolve) => {
+        const t0 = performance.now();
+        const frame = (now: number) => {
+          if (token !== run) return resolve();
+          const t = Math.min(1, (now - t0) / ms);
+          const e = ease(t);
+          draw(
+            fromX.map((v, i) => v + (toX[i] - v) * e),
+            fromY.map((v, i) => v + (toY[i] - v) * e),
+          );
+          if (t < 1) requestAnimationFrame(frame);
+          else resolve();
+        };
+        requestAnimationFrame(frame);
+      });
+    }
+
+    function setButtons() {
+      play.textContent = auto ? 'Stop' : 'Train all';
+      play.disabled = !auto && s.seen >= TOTAL_STEPS;
+      fakes.disabled = auto;
+    }
+
+    function setCaption() {
+      fig.classList.toggle('tm-done', s.seen >= TOTAL_STEPS);
+      if (s.seen === 0) {
+        caption.textContent = fakes.checked
+          ? 'Every word starts with two random numbers. Let the computer play the guessing game!'
+          : 'Fake pairs are off, so the game is rigged. What do you think will happen?';
+      } else if (s.seen >= TOTAL_STEPS) {
+        caption.textContent = fakes.checked
+          ? 'Words that share neighbors have ended up together.'
+          : 'Without fake pairs, every word ends up in one big pile. Switch them back on to fix the game.';
+      } else {
+        caption.textContent = 'Real pairs pull words together, fake pairs push them apart.';
+      }
+    }
+
+    function interrupt() {
+      run++;
+      auto = false;
+      draw([...s.x], [...s.y]); // jump to where things should be
+      setButtons();
+    }
+
+    const stepRows = (info: StepInfo, done: boolean): Row[] => {
+      const rows: Row[] = [
+        { kind: 'real', label: 'Real pair', pairs: [info.real], verb: done ? '→ nudged closer' : '→ will be nudged closer' },
+      ];
+      if (info.fakes.length) {
+        rows.push({
+          kind: 'fake',
+          label: info.fakes.length > 1 ? 'Fake pairs' : 'Fake pair',
+          pairs: info.fakes,
+          verb: done ? '→ nudged apart' : '→ will be nudged apart',
+        });
+      }
+      return rows;
+    };
+
+    // Show which pair comes next (highlighted on the graph and listed below it)
+    function preview() {
+      if (!next) next = pickStep(s, cfg.real, fakes.checked, rnd);
+      highlight(next.real, next.fakes);
+      setRows([{ kind: 'head', label: 'Next up:', verb: '' }, ...stepRows(next, false)]);
+    }
+
+    // One pair in two visible steps: first the real pair, then the fake pairs
+    async function onePair(token: number, ms = 650) {
+      if (!next) next = pickStep(s, cfg.real, fakes.checked, rnd);
+      const info = next;
+      next = null;
+      highlight(info.real, info.fakes);
+
+      applyReal(s, info);
+      setRows([
+        { kind: 'head', label: 'Training…', verb: '' },
+        ...stepRows(info, false).map((r) => (r.kind === 'real' ? { ...r, verb: '→ nudged closer' } : r)),
+      ]);
+      await glide(ms, token);
+      if (token !== run) return;
+
+      if (info.fakes.length) {
+        await sleep(250);
+        if (token !== run) return;
+        applyFakes(s, info);
+        setRows([{ kind: 'head', label: 'Training…', verb: '' }, ...stepRows(info, true)]);
+        await glide(ms, token);
+        if (token !== run) return;
+      }
+      s.seen++;
+      separate(s);
+      draw([...s.x], [...s.y]);
+      setCaption();
+    }
+
+    // After a manual step: let the result sink in, then show what's next
+    async function thenPreview(token: number, ms: number) {
+      await sleep(ms);
+      if (token !== run || auto) return;
+      preview();
+    }
+
+    async function batch(token: number) {
+      if (next) {
+        applyReal(s, next);
+        applyFakes(s, next);
+        s.seen++;
+        next = null;
+        train(s, cfg.real, BATCH - 1, fakes.checked, rnd);
+      } else {
+        train(s, cfg.real, BATCH, fakes.checked, rnd);
+      }
+      highlight();
+      const rows: Row[] = [{ kind: 'real', label: `${nf.format(BATCH)} real pairs`, verb: '→ nudged closer' }];
+      if (fakes.checked) rows.push({ kind: 'fake', label: `~${nf.format(BATCH * FAKES_PER_REAL)} fake pairs`, verb: '→ nudged apart' });
+      setRows([{ kind: 'head', label: 'Training…', verb: '' }, ...rows]);
+      await glide(700, token);
+      setCaption();
+    }
+
+    async function autoRun() {
+      const token = ++run;
+      auto = true;
+      setButtons();
+      caption.textContent = 'Real pairs pull words together, fake pairs push them apart.';
+      next = null;
+      highlight();
+      const t0 = performance.now();
+      await new Promise<void>((resolve) => {
+        const frame = (now: number) => {
+          if (token !== run) return resolve();
+          const secs = (now - t0) / 1000;
+          const perFrame = Math.max(1, Math.round(Math.min(40, 2 + secs * secs * 12)));
+          train(s, cfg.real, Math.min(perFrame, TOTAL_STEPS - s.seen), fakes.checked, rnd);
+          draw([...s.x], [...s.y]);
+          setLine(`Playing the guessing game with ${nf.format(s.seen)} word pairs…`);
+          if (s.seen >= TOTAL_STEPS) return resolve();
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      });
+      if (token !== run) return;
+      auto = false;
+      setLine(`Done! The computer played the guessing game with ${nf.format(s.seen)} word pairs.`);
+      highlight();
+      setButtons();
+      setCaption();
+    }
+
+    play.addEventListener('click', () => {
+      if (auto) {
+        interrupt();
+        next = null;
+        preview();
+        return;
+      }
+      autoRun();
+    });
+    one.addEventListener('click', async () => {
+      interrupt();
+      const token = run;
+      await onePair(token);
+      setButtons();
+      thenPreview(token, 1300);
+    });
+    many.addEventListener('click', async () => {
+      interrupt();
+      const token = run;
+      await batch(token);
+      setButtons();
+      thenPreview(token, 1800);
+    });
+    const restart = () => {
+      interrupt();
+      rnd = seeded(Math.floor(Math.random() * 1e9));
+      s = scatter(W.length, rnd);
+      next = null;
+      draw([...s.x], [...s.y]);
+      preview();
+      setButtons();
+      setCaption();
+    };
+    reset.addEventListener('click', restart);
+    fakes.addEventListener('change', restart);
+
+    // Show the interactive version: start from the random scatter
+    fig.querySelectorAll<HTMLElement>('.tm-controls, .tm-progress, .tm-readout').forEach((el) => (el.hidden = false));
+    fig.classList.add('tm-live');
+    draw([...s.x], [...s.y]);
+    preview();
+    setButtons();
+    setCaption();
+  }
+
+  document.querySelectorAll<HTMLElement>('.trainmap').forEach(setup);
+</script>
+
+<style is:global>
+  .trainmap {
+    --tm-real: #5cc28a;
+    --tm-fake: #ae8ee6;
+    /* don't let the browser scroll the page along with the moving words */
+    overflow-anchor: none;
+    margin: 1.6em 0 1.8em;
+    padding: 12px 12px 14px;
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    background: var(--paper-2);
+    font-family: var(--font-ui);
+  }
+  .trainmap svg {
+    display: block;
+    width: 100%;
+    max-width: 460px;
+    height: auto;
+    margin: 0 auto;
+    overflow: visible;
+    font-family: var(--font-ui);
+  }
+  .trainmap .tm-grid line { stroke: var(--rule); stroke-width: 1; }
+  .trainmap .tm-axis { stroke: var(--ink-soft); stroke-width: 1.5; }
+  .trainmap .tm-arrow { fill: var(--ink-soft); }
+  .trainmap .tm-tick { fill: var(--ink-soft); font-size: 13px; font-family: var(--font-mono); }
+  .trainmap .tm-axis-label { fill: var(--ink); font-size: 16px; font-weight: 600; }
+
+  .trainmap .tm-pt circle { stroke: var(--paper-2); stroke-width: 2; }
+  /* all words are gray; only the pair being trained gets a color */
+  .trainmap .tm-pt circle { fill: var(--ink-soft); }
+  /* once training is done, color the groups so they're easy to spot */
+  .trainmap.tm-done .tm-pt-a circle { fill: var(--accent); }
+  .trainmap.tm-done .tm-pt-b circle { fill: var(--slate); }
+  .trainmap .tm-link { stroke-width: 2; stroke-linecap: round; opacity: 0; transition: opacity 0.2s ease; pointer-events: none; }
+  .trainmap .tm-link.tm-show { opacity: 0.8; }
+  .trainmap .tm-link-real { stroke: var(--tm-real); }
+  .trainmap .tm-link-fake { stroke: var(--tm-fake); stroke-dasharray: 5 4; }
+  .trainmap .tm-pt text {
+    fill: var(--ink);
+    font-size: 15px;
+    font-weight: 500;
+    paint-order: stroke;
+    stroke: var(--paper-2);
+    stroke-width: 4px;
+    stroke-linejoin: round;
+  }
+
+  .trainmap .tm-pt circle { transform-box: fill-box; transform-origin: center; }
+  /* the pair being trained: green for the real pair, purple for fake pairs */
+  .trainmap .tm-hl-real circle { fill: var(--tm-real); }
+  .trainmap .tm-hl-fake circle { fill: var(--tm-fake); }
+
+  .trainmap .tm-readout {
+    min-height: 5.6rem; /* room for the rows, so the layout doesn't jump */
+    max-width: 30rem;
+    margin: 10px auto 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    font-size: 0.88rem;
+    line-height: 1.3;
+  }
+  .trainmap .tm-line { margin: 0; text-align: center; color: var(--ink-soft); }
+  /* rows share one grid, so the labels line up */
+  .trainmap .tm-readout:has(.tm-row) {
+    display: grid;
+    /* a fixed-width second column, centered as a whole, so the block sits in
+       the middle and doesn't shift sideways when the pairs change */
+    grid-template-columns: minmax(8.5rem, max-content) minmax(19.5rem, max-content);
+    justify-content: center;
+    align-content: center;
+    /* line each label up with the first pair next to it, not the middle */
+    align-items: first baseline;
+    gap: 6px 12px;
+  }
+  .trainmap .tm-row { display: contents; }
+  .trainmap .tm-row-head {
+    display: block;
+    grid-column: 1 / -1;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--slate);
+  }
+  .trainmap .tm-row-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .trainmap .tm-row-label::before {
+    content: '';
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--tm-real);
+  }
+  .trainmap .tm-row-fake .tm-row-label::before { background: var(--tm-fake); }
+  .trainmap .tm-row-pairs { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+  /* a pair and its "nudged" text always stay on one line */
+  .trainmap .tm-pair-line { display: flex; flex-wrap: nowrap; align-items: baseline; gap: 4px 6px; white-space: nowrap; }
+  .trainmap .tm-verb-narrow { display: none; }
+  @media (max-width: 520px) {
+    .trainmap .tm-verb-wide { display: none; }
+    .trainmap .tm-verb-narrow { display: inline; }
+    .trainmap .tm-readout { min-height: 7.6rem; }
+    .trainmap .tm-readout:has(.tm-row) { grid-template-columns: max-content minmax(0, max-content); }
+  }
+  .trainmap .tm-row-pairs code {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    padding: 2px 7px;
+    border-radius: 5px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .trainmap .tm-row-verb { color: var(--ink-soft); white-space: nowrap; }
+  .trainmap .tm-readout[hidden] { display: none; }
+
+  .trainmap .tm-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 10px 14px;
+    margin-top: 12px;
+  }
+  .trainmap .tm-controls[hidden],
+  .trainmap .tm-progress[hidden] { display: none; }
+  .trainmap .tm-controls button {
+    font: inherit;
+    font-size: 0.88rem;
+    font-weight: 600;
+    padding: 6px 13px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .trainmap .tm-play { border: 1px solid var(--slate); background: var(--slate); color: var(--paper); min-width: 6.5rem; }
+  .trainmap .tm-play:disabled { opacity: 0.4; cursor: default; filter: none; }
+  .trainmap .tm-one,
+  .trainmap .tm-many { border: 1px solid var(--slate); background: var(--paper); color: var(--slate); }
+  .trainmap .tm-one:hover,
+  .trainmap .tm-many:hover { background: var(--slate-soft); }
+  .trainmap .tm-controls-2 {
+    max-width: 26rem;
+    margin: 14px auto 0;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+  }
+  .trainmap .tm-play:hover { filter: brightness(1.08); }
+  .trainmap .tm-reset { border: 1px solid var(--rule); background: var(--paper); color: var(--ink-soft); }
+  .trainmap .tm-reset:hover { border-color: var(--slate); color: var(--slate); }
+  .trainmap .tm-fakes { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; color: var(--ink-soft); cursor: pointer; }
+  .trainmap .tm-fakes input { accent-color: var(--slate); width: 16px; height: 16px; }
+  .trainmap .tm-hint { font-size: 0.82rem; color: var(--ink-soft); opacity: 0.85; }
+
+  .trainmap .tm-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    max-width: 22rem;
+    margin: 12px auto 0;
+  }
+  .trainmap .tm-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden; }
+  .trainmap .tm-fill { width: 0; height: 100%; background: var(--slate); }
+  .trainmap .tm-count { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-soft); white-space: nowrap; }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .trainmap { --tm-real: #8ee0b2; --tm-fake: #cdb6f6; }
+  }
+  :root[data-theme='dark'] .trainmap { --tm-real: #8ee0b2; --tm-fake: #cdb6f6; }
+
+  /* parts that only work with JavaScript: hidden without it, but laid out
+     from the very first paint with it, so the page doesn't shift */
+  html:not(.js) .trainmap .tm-js { display: none !important; }
+  .trainmap figcaption {
+    min-height: 2.6em;
+    margin-top: 10px;
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+  }
+</style>
