@@ -14,7 +14,7 @@ import SpamCompare from '../../components/SpamCompare.astro';
 
 This post is the second in a series where I endeavor to explain how large language models (LLMs) work, for people who have little or no technical background. By the end, you'll (hopefully) understand how an LLM like Claude or ChatGPT turns your questions into answers, with no math or coding background needed. We'll take it step by step, one problem at a time.
 
-As you might expect, this post builds heavily on concepts introduced in [the previous one](/posts/bag-of-words/). If you haven't read that yet, I encourage you to do so before continuing.
+As you might expect, this post builds heavily on concepts introduced in [the previous post](/posts/bag-of-words/). If you haven't read that yet, I encourage you to do so before continuing.
 
 ## The spam strikes back
 
@@ -30,7 +30,7 @@ One morning, a new wave of spam floods the inboxes, all with the same subject li
 
 Not a single email gets caught. You check your filter and quickly see why. Words like "complimentary", "cash" and "claim" never appeared in your example emails, so your filter was never trained to recognize them. As far as it's concerned, they don't even exist, so it simply ignores them.
 
-You could collect a pile of these new emails and train your filter again, but these spammers are deviously quick. While you're busy teaching it to catch "cash" and "claim", they might already have switched to emails titled "Access your monetary compensation", and you'd have to start all over again. You feel like a dog chasing its tail. Where does it end?!
+You could collect a pile of these new emails and train your filter again, but these spammers are deviously quick. While you're busy teaching it to catch "cash" and "claim", they might already have switched to emails titled "Access your monetary compensation", and you'd have to start all over again. You feel like a dog chasing its own tail. Where does it end?!
 
 It seems the spammers have exposed bag of words' biggest limitation: it has no idea which words are similar, or how they relate to each other. "Money" and "cash" might be practically the same thing to you and me, but to bag of words they are just two collections of characters, as similar to each other as "money" and "spaceship". Your filter has, of course, learned that "money" is a strong spam signal. It just has no way of telling that "cash" is its close cousin.
 
@@ -46,7 +46,7 @@ _"You shall know a word by the company it keeps."_
 
 This intrigues you, and you dig a little deeper.
 
-As it turns out, what Firth meant was that words that show up surrounded by similar words tend to have similar meanings. (Funnily enough, our old friend Zellig Harris made the same point three years earlier, in that 1954 paper of his.) To see what that means, try filling in the blanks below:
+As it turns out, what Firth meant was that if two words tend to show up around the same other words, they probably mean something similar. (Funnily enough, our old friend Zellig Harris made the same point three years earlier, in that 1954 paper of his.) To see what that means, try filling in the blanks below:
 
 - "I fed the ___ this morning"
 - "The ___ was sleeping on the couch"
@@ -54,7 +54,7 @@ As it turns out, what Firth meant was that words that show up surrounded by simi
 
 Words like "dog", "puppy", even "wolf" or "hound" (mostly) fit. "Spreadsheet" or "hydraulics" obviously do not. Which goes to show you can learn a lot about a word just from the words around it, without anyone ever explaining what it means!
 
-The same goes for your spam problem. "Money" and "cash" keep the same company too:
+And the same goes for your spam problem. "Money" and "cash" keep the same company too:
 
 - "I need to withdraw some ___ from the bank"
 - "Sorry, I'm a bit short on ___ this month"
@@ -63,7 +63,7 @@ So if a computer could track which words tend to show up around which other word
 
 ## Making up numbers
 
-Of course, computers still need numbers to work with. And unlike with bag of words, it's not enough to just count which words show up in an email. Your new filter should be able to compare individual words with each other and judge how similar they are. For that to work, each word will probably need numbers of its own. And that's not all. Similar words should also end up with similar numbers. Otherwise, how would a computer tell they're alike?
+Of course, computers still need numbers to work with. And unlike with bag of words, it's not enough to just count which words show up in an email. Your new filter should be able to compare individual words with each other and judge how similar they are. For that to work, each word will probably need its own numbers. And that's not all. Similar words should also end up with similar numbers. Otherwise, how would a computer tell they're alike?
 
 Hmmm. What would those numbers look like? You decide to do a little experiment.
 
@@ -76,9 +76,9 @@ You grab a notepad and write down four words: "money" and "cash" from your curse
 |dog|0.05|0.95|
 |hound|0.1|0.9|
 
-That looks good! Each of the four words has its own set of numbers that captures part of its meaning. "Money" is now represented as `[0.95, 0.05]`, meaning it has a lot to do with finance (0.95) and very little to do with animals (0.05). "Dog" is the other way around: `[0.05, 0.95]`. And look: "money" and "cash" got almost the same numbers, just like "dog" and "hound". Similar words, similar numbers. That's exactly what you were after!
+That looks good! Each of the four words now has its own set of numbers that captures part of its meaning. "Money" is now represented as `[0.95, 0.05]`, meaning it has a lot to do with finance (0.95) and very little to do with animals (0.05). "Dog" is the other way around with `[0.05, 0.95]`. And look: "money" and "cash" got almost the same numbers, just like "dog" and "hound". Similar words, similar numbers. That's exactly what you were after!
 
-And it gets even clearer when you draw it. Since every word has two numbers, you can plot them on a simple graph, like the ones you probably remember from math class. The first number, the finance score, decides how far right a word goes on the x-axis. The second number, the animal score, decides how high up it goes on the y-axis:
+It gets even clearer when you draw it. Since every word has two numbers, you can plot them on a simple graph, like the ones you probably remember from math class. The first number, the finance score, decides how far right a word goes on the x-axis. The second number, the animal score, decides how high up it goes on the y-axis:
 
 <WordMap />
 
@@ -92,7 +92,7 @@ Before we get back to your spam filter, let's take a closer look at these number
 
 If you're getting a sense of déjà vu, don't worry. It's not a glitch in the Matrix. We've actually seen this shape before: bag of words used the exact same one. In other words, these numbers are also vectors!
 
-And yet, these vectors are quite different from the ones we saw in bag of words. There, a vector described an entire email: it had a spot for every word in the vocabulary, counting how many times that word showed up in the email. Even words that didn't show up at all still got a spot, with a zero.
+And yet, these vectors are quite different from the ones we saw before. With bag of words, a vector described an entire email: it had a spot for every word in the vocabulary, counting how many times that word showed up in the email. Even words that didn't show up at all still got a spot, with a zero.
 
 Remember "win free money"? In our tiny example with a vocabulary of only seven words, its vector became `[1, 1, 1, 0, 0, 0, 0]`: a one for each of the three words in the email, and a zero for each of the four that weren't. Seven numbers is manageable. But with a vocabulary of 50,000 words, that same email would become a list of 50,000 numbers: three ones and 49,997 zeros.
 
@@ -102,7 +102,7 @@ Let's compare that to the "money" vector on your notepad: `[0.95, 0.05]`. Instea
 
 Vectors where each number counts and has a meaning are called **dense vectors**. And when a dense vector represents a word, we call it... _drum roll_... an **embedding**!
 
-Without even realizing it, you've just made your very first embeddings. Two-dimensional ones, if you will, since every word gets two numbers. Eager to see how far you can take your new approach, you add a few more words to your notepad: "coin", "salary", "wolf" and "puppy".
+Look at that: without even realizing it, you’ve just made your very first embeddings. Two-dimensional ones, if you will, since every word gets two numbers. Eager to see how far you can take your new approach, you add a few more words to your notepad: “coin”, “salary”, “wolf” and “puppy”.
 
 ## Too many questions
 
@@ -122,11 +122,11 @@ Here's where the new words end up. Feel free to drag them around, or add a few w
   ]}
 />
 
-The more words you add, though, the clearer a problem becomes. With only two questions (and thus only two numbers) to go on, there is little room for nuance, and words that aren't all that similar still end up bunched together. "Coin" and "salary" land right next to "cash", while "wolf" and "puppy" huddle up with "dog". But surely a coin and a salary aren't the same thing, and neither are a wolf and a puppy?
+As you add more words, though, a problem starts to show. With only two questions (and thus only two numbers) to go on, there is little room for nuance, and words that aren't all that similar still end up bunched together. "Coin" and "salary" land right next to "cash", while "wolf" and "puppy" huddle up with "dog". But surely a coin and a salary aren't the same thing, and neither are a wolf and a puppy?
 
 Your first instinct is to just add more questions. This was only a simple experiment, after all. To accurately score a wider variety of words, like "spreadsheet" or "lunch", you'll need more nuance, and every extra question you ask gives each word one more number to work with.
 
-But now that you actually have to come up with the questions, you hesitate. Which ones should you even ask? Is it alive? How big is it? Does it belong in an office? Can you eat it? Can you fry it? And for that matter, how many questions are enough? How many would you need to capture the nuance and richness of every word in a language?
+But now that you actually have to come up with the questions, you hesitate. Which ones should you even ask? Is it alive? How big is it? Does it belong in an office? Can you eat it? Can you fry it? And for that matter, how many questions, and thus numbers, are enough? How many would you need to capture the nuance and richness of every word in a language?
 
 You decide to build up your list one question at a time, and for a while, you bravely plow on. But it's no use. For every question you make up, you immediately think of two words it can't tell apart. And every new word you add to your notepad seems to call for yet another question. Even with hundreds of them, you'd barely scratch the surface of all the subtle differences between words.
 
@@ -162,7 +162,7 @@ But how would that work in practice? How do you keep track of which words appear
 
 > "I need to withdraw some cash from the bank"
 
-You pick a word, say "cash", and look at its left and right neighbors. How many neighbors, though? Well, you don't want to include only the words right next to it, since that might not give you enough information. But you also don't want to include too many, since words that are seven places apart could hardly be called neighbors anymore. You decide to go with two on each side.
+You pick a word, say "cash", and look at its left and right neighbors. How many neighbors? Well, you don't want to include only the words right next to it, since that might not give you enough information. But you also don't want to include too many, since words that are seven places apart could hardly be called neighbors anymore. You decide to go with two on each side.
 
 This gives you "withdraw" and "some" to the left, and "from" and "the" to the right. Then you pair "cash" up with each of them: `(cash, withdraw)`, `(cash, some)`, `(cash, from)` and `(cash, the)`. Et voilà, each of these **word pairs** is a tiny piece of evidence that the two words tend to appear close together. After that, you move on to the next word, "from", and do the same. And the next, and the next, until you've gone through the whole sentence.
 
@@ -204,7 +204,7 @@ Wrong! This is a real word pair, straight from your sentence, so "cash" and "wit
 
 No surprise there, of course, since their numbers were completely random. But because "cash" and "withdraw" are in fact neighbors in your sentence, they should end up closer together on the graph. So the computer updates their numbers accordingly. Not a lot, mind you! It only **nudges** them a tiny bit, just enough to move the two words a little closer to each other.
 
-After the nudge, "cash" might go from `[0.8, 0.1]` to `[0.78, 0.12]`, and "withdraw" from `[0.2, 0.7]` to `[0.22, 0.68]`. Since a word's numbers decide where it sits on the graph, both words shift a little toward each other.
+After the nudge, "cash" might go from `[0.8, 0.1]` to `[0.78, 0.12]`, and "withdraw" from `[0.2, 0.7]` to `[0.22, 0.68]`. Since the numbers of a word decide where it sits on the graph, both words shift a little toward each other.
 
 Notice that if the computer had to guess `(cash, withdraw)` again right away, it would still say "nope, not neighbors." The two words have barely moved. But that's exactly how it should be. One word pair is only a tiny piece of evidence, and two words showing up together once shouldn't be enough to make them neighbors on the graph. After all, meeting someone at a bar once doesn't make you best buds either (at least, I hope it doesn't). It's only when the same words keep showing up together, again and again and again, across millions of pairs, that all those tiny nudges add up.
 
@@ -224,7 +224,7 @@ Think of them as two people who've never even met, but who keep turning up at th
 
 And that, more or less, is exactly how **word2vec** works. Just like you, the researchers at Google didn't score a single word by hand. Instead, they gave the computer a gigantic pile of text (around 100 billion words from Google News articles) and let it play the guessing game until the numbers fell into place.
 
-They did, however, use a lot more numbers. Two numbers were great for your experiment, since you could draw them on a graph. But with millions of very diverse words to place, two numbers simply don't leave enough room to tell them all apart and capture enough nuance. Adding more numbers doesn't come for free, though. Every time the computer nudges a word, it has to adjust every single one of its numbers, so with hundreds of numbers instead of two, each nudge takes a lot more calculating, especially when it needs to happen billions of times during training. In the end, it's a balancing act: enough numbers to capture all that nuance, but not so many that your computer catches fire.
+They did, however, use a lot more numbers. Two numbers were great for your experiment, since you could draw them on a graph. But with thousands of very diverse words to place, two numbers simply don't leave enough room to tell them all apart and capture enough nuance. Adding more numbers doesn't come for free, though. Every time the computer nudges a word, it has to adjust every single one of its numbers, so with hundreds of numbers instead of two, each nudge takes a lot more calculating, especially when it needs to happen billions of times during training. In the end, it's a balancing act: enough numbers to capture all that nuance, but not so many that your computer catches fire.
 
 For word2vec, the researchers settled on 300 numbers per word, which turned out to be a sweet spot. You might now be tempted to picture a graph with 300 directions, but you'd get a headache and your ears might start to bleed. It's impossible to visualize with brains that are used to three dimensions, but the idea is still the same as on your notepad: the closer two words are, the more they have in common.
 
